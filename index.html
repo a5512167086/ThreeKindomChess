@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>三人象棋 9×5×3</title>
+    <style>
+      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin: 0; background: #0b1020; color: #e6e8ef; }
+      .wrap { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
+      .row { display: flex; gap: 16px; flex-wrap: wrap; }
+      .panel { background: #0f152a; border: 1px solid #1c2548; border-radius: 14px; padding: 16px; box-shadow: 0 6px 28px rgba(0,0,0,.3); }
+      .board { display: grid; grid-template-columns: repeat(9, 44px); grid-auto-rows: 44px; gap: 4px; position: relative; }
+      .cell { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 8px; background: #111936; border: 1px solid #1c2548; cursor: pointer; }
+      .cell.dim { opacity: .45; }
+      .cell.sel { outline: 2px solid #8ab4ff; }
+      .cell.mv  { box-shadow: inset 0 0 0 2px #62d6a1; }
+      .piece { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; letter-spacing: .5px; }
+      .A { background: #2b60ff33; border: 1px solid #3c6aff; }
+      .B { background: #ff3b3033; border: 1px solid #ff5a52; }
+      .C { background: #00d1a233; border: 1px solid #24d8b1; }
+      .meta { font-size: 14px; opacity: .9; }
+      .btn { background: #1a2347; border: 1px solid #2a3470; padding: 8px 12px; color: #e6e8ef; border-radius: 10px; cursor: pointer; }
+      .btn:hover { background: #1e2955; }
+      .tag { font-size: 12px; padding: 2px 6px; border-radius: 999px; border: 1px solid #2a3470; background: #121b3c; margin-left: 8px; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
