@@ -24,11 +24,9 @@ const LINE_COLOR = "#e5e7eb";
 const TOP_FOLD = 250;
 const SHRINK_PER_ROW = 80;
 
-const LEFT_ROT = 120.5;
-const RIGHT_ROT = -120.5;
-
-const SEAM_X = 380;
-const SEAM_Y = 620;
+// 中央三角形（三個 A5 連線）的邊長；三片面板繞三角形中心各差 120°
+const TRIANGLE_SIDE = 300;
+const HUB_Y = -TOP_FOLD - TRIANGLE_SIDE / Math.sqrt(3);
 
 const SELECT_COLOR = "#facc15";
 const TARGET_COLOR = "#4ade80";
@@ -36,11 +34,21 @@ const LAST_MOVE_COLOR = "#f59e0b";
 
 type PanelTransform = { x: number; y: number; rotation: number };
 
+// 繞 (0, HUB_Y) 旋轉 deg 度：換算成 Konva 的「先旋轉再平移」
+const aroundHub = (deg: number): PanelTransform => {
+  const rad = (deg * Math.PI) / 180;
+  return {
+    x: HUB_Y * Math.sin(rad),
+    y: HUB_Y * (1 - Math.cos(rad)),
+    rotation: deg,
+  };
+};
+
 // 每片面板在棋盤座標中的位移與旋轉（面板 Group 與跨面板連線共用）
 const PANEL_TRANSFORMS: Record<Side, PanelTransform> = {
-  Center: { x: 0, y: 0, rotation: 0 },
-  Left: { x: -SEAM_X, y: -SEAM_Y, rotation: LEFT_ROT },
-  Right: { x: SEAM_X, y: -SEAM_Y, rotation: RIGHT_ROT },
+  Center: aroundHub(0),
+  Left: aroundHub(120),
+  Right: aroundHub(-120),
 };
 
 // 局部座標 -> 外層座標（與 Konva 先旋轉再平移的順序一致）
