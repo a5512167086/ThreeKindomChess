@@ -30,11 +30,20 @@ export function ChatBox({
 }: ChatBoxProps) {
   const [draft, setDraft] = useState("");
 
-  // 有新訊息就捲到最下面
+  // 縮小：只留標題列；縮小期間收到的訊息顯示成未讀數
+  const [collapsed, setCollapsed] = useState(false);
+  const [seenCount, setSeenCount] = useState(0);
+  const unread = collapsed ? Math.max(0, lines.length - seenCount) : 0;
+  const toggle = () => {
+    if (!collapsed) setSeenCount(lines.length);
+    setCollapsed(!collapsed);
+  };
+
+  // 有新訊息或展開時捲到最下面
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "nearest" });
-  }, [lines.length]);
+  }, [lines.length, collapsed]);
 
   const send = () => {
     const text = draft.trim();
@@ -50,7 +59,7 @@ export function ChatBox({
         bottom: 16,
         [corner]: 16,
         width: 260,
-        height: 220,
+        height: collapsed ? "auto" : 220,
         zIndex: 1,
         display: "flex",
         flexDirection: "column",
@@ -62,59 +71,88 @@ export function ChatBox({
         opacity: open ? 1 : 0.75,
       }}
     >
+      {/* 標題列：點一下縮小 / 展開 */}
       <div
+        onClick={toggle}
+        title={collapsed ? "展開" : "縮小"}
         style={{
           display: "flex",
-          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 8,
           padding: "6px 10px",
-          borderBottom: "1px solid #334155",
+          borderBottom: collapsed ? "none" : "1px solid #334155",
+          cursor: "pointer",
+          userSelect: "none",
         }}
       >
-        <span style={{ color: accent, fontWeight: "bold" }}>{title}</span>
+        <span style={{ color: accent, fontWeight: "bold", flex: 1 }}>
+          {title}
+          {unread > 0 && (
+            <span
+              style={{
+                marginLeft: 6,
+                padding: "0 6px",
+                borderRadius: 8,
+                background: "#dc2626",
+                color: "#fff",
+                fontSize: 11,
+              }}
+            >
+              {unread}
+            </span>
+          )}
+        </span>
         <span style={{ fontSize: 12, color: open ? "#4ade80" : "#94a3b8" }}>
           {open ? "● 已接通" : "○ 未接通"}
         </span>
+        <span style={{ width: 12, textAlign: "center" }}>
+          {collapsed ? "＋" : "－"}
+        </span>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "6px 10px" }}>
-        {lines.length === 0 && (
-          <div style={{ opacity: 0.5 }}>{open ? "還沒有訊息" : closedHint}</div>
-        )}
-        {lines.map((l) => (
-          <div
-            key={l.key}
-            style={{ textAlign: l.mine ? "right" : "left", marginBottom: 4 }}
-          >
-            <span style={{ color: l.color, fontWeight: "bold" }}>{l.name}</span>
-            ：{l.text}
+      {!collapsed && (
+        <>
+          <div style={{ flex: 1, overflowY: "auto", padding: "6px 10px" }}>
+            {lines.length === 0 && (
+              <div style={{ opacity: 0.5 }}>{open ? "還沒有訊息" : closedHint}</div>
+            )}
+            {lines.map((l) => (
+              <div
+                key={l.key}
+                style={{ textAlign: l.mine ? "right" : "left", marginBottom: 4 }}
+              >
+                <span style={{ color: l.color, fontWeight: "bold" }}>{l.name}</span>
+                ：{l.text}
+              </div>
+            ))}
+            <div ref={endRef} />
           </div>
-        ))}
-        <div ref={endRef} />
-      </div>
 
-      <div
-        style={{
-          display: "flex",
-          gap: 4,
-          padding: 6,
-          borderTop: "1px solid #334155",
-        }}
-      >
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          // 中文輸入法選字時按 Enter 不送出
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.nativeEvent.isComposing) send();
-          }}
-          disabled={!open}
-          placeholder={open ? "輸入訊息…" : closedHint}
-          style={{ flex: 1, minWidth: 0 }}
-        />
-        <button onClick={send} disabled={!open || !draft.trim()}>
-          送出
-        </button>
-      </div>
+          <div
+            style={{
+              display: "flex",
+              gap: 4,
+              padding: 6,
+              borderTop: "1px solid #334155",
+            }}
+          >
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              // 中文輸入法選字時按 Enter 不送出
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) send();
+              }}
+              disabled={!open}
+              placeholder={open ? "輸入訊息…" : closedHint}
+              style={{ flex: 1, minWidth: 0 }}
+            />
+            <button onClick={send} disabled={!open || !draft.trim()}>
+              送出
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
