@@ -20,6 +20,8 @@ export type SeatInfo =
 
 export type RoomStatus = "waiting" | "playing" | "finished";
 
+// 房間裡看到的 playerId 都是「公開代號」，不是拿來連線的身分，
+// 所以就算被別人看到也沒辦法冒充
 export type RoomView = {
   code: string;
   hostId: string;
@@ -45,6 +47,7 @@ export interface ClientToServerEvents {
 }
 
 export interface ServerToClientEvents {
+  "session:me": (playerId: string) => void; // 連上後第一個訊息：自己的公開代號
   "room:state": (room: RoomView | null) => void; // null = 不在任何房間
   "match:status": (waiting: number | null) => void; // 排隊人數；null = 沒在排隊
   // 整盤棋譜與目前時鐘（開局、重連時）
@@ -55,5 +58,12 @@ export interface ServerToClientEvents {
   "chat:message": (message: ChatMessage) => void;
 }
 
-// 連線時帶的身分：playerId 存在瀏覽器裡，重新整理後還是同一個人
+// 連線時帶的身分：playerId 存在瀏覽器裡，重新整理後還是同一個人。
+// 已登入的話伺服器改用 cookie 裡的帳號，playerId 會被忽略。
 export type HandshakeAuth = { playerId: string; name: string };
+
+// GET /auth/me 的回應：沒登入時 account 是 null；
+// providers 是伺服器有設定好的登入方式（沒設定就不顯示按鈕）
+export type LoginProvider = "google";
+export type AccountInfo = { name: string; avatarUrl: string | null };
+export type MeResponse = { account: AccountInfo | null; providers: LoginProvider[] };

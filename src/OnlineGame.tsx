@@ -7,7 +7,7 @@ import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 
 import type { Pos, Side } from "./rules";
 import { type GameState, TURN_ORDER, newGame, play } from "./game";
 import { type ChatMessage, type RoomView, ROOM_SIZE } from "./protocol";
-import { type GameSocket, connect, playerId, saveRoom } from "./net";
+import { type GameSocket, connect, saveRoom } from "./net";
 import { type Clock, fromClockView } from "./clock";
 import { GameView } from "./GameView";
 import { PANEL_COLORS, sideName } from "./sides";
@@ -40,7 +40,7 @@ export function OnlineGame({
   action: OnlineAction;
   onExit: (notice?: string) => void;
 }) {
-  const me = playerId();
+  const [me, setMe] = useState<string | null>(null); // 伺服器給的公開代號
   const socketRef = useRef<GameSocket | null>(null);
   const [connected, setConnected] = useState(false);
   const [connectFailed, setConnectFailed] = useState(false);
@@ -77,6 +77,7 @@ export function OnlineGame({
     });
     socket.on("disconnect", () => setConnected(false));
     socket.on("connect_error", () => setConnectFailed(true));
+    socket.on("session:me", setMe);
 
     socket.on("room:state", (r) => {
       setRoom(r);
@@ -165,7 +166,7 @@ export function OnlineGame({
     </div>
   );
 
-  if (!connected) {
+  if (!connected || !me) {
     return (
       <Panel>
         {errorToast}

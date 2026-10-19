@@ -1,9 +1,14 @@
-// 三國象棋連線伺服器：房間、自動配對、權威棋局、電腦補位、私聊轉發
+// 三國象棋連線伺服器：房間、自動配對、權威棋局、電腦補位、私聊轉發、帳號登入
 //
-// 開發時：yarn server（預設 3001 port），前端的 Vite 會把 /socket.io 轉過來。
+// 開發時：yarn server（預設 3001 port），前端的 Vite 會把 /socket.io 和 /auth 轉過來。
+// 設定放在專案根目錄的 .env（參考 .env.example）。
 
+import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { createServer } from "node:http";
 import { Server, type Socket } from "socket.io";
+import { openDb } from "./db";
+import { type Account, accountFromCookie, createAuthHandler, renameAccount } from "./auth";
 import { type GameState, TURN_ORDER, chatOpen, newGame, play } from "../src/game";
 import { chooseMove } from "../src/ai";
 import {
@@ -28,15 +33,35 @@ import {
   ROOM_SIZE,
 } from "../src/protocol";
 
+if (existsSync(".env")) process.loadEnvFile();
+
 const PORT = Number(process.env.PORT ?? 3001);
+const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN ?? "http://localhost:5173";
+const GOOGLE =
+  process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+    ? {
+        clientId: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      }
+    : null;
+const USER_PREFIX = "user:"; // 已登入玩家的 playerId 開頭，訪客不能用
 const AI_DELAY_MS = 600; // 電腦每步之間的停頓
 const WAITING_GRACE_MS = 30_000; // 還沒開局的房間，斷線多久就移出
 const IDLE_ROOM_TTL_MS = 10 * 60_000; // 房間裡沒有真人在線多久就刪除
 
-type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
+type SocketData = { account: Account | null };
+type GameSocket = Socket<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  Record<string, never>,
+  SocketData
+>;
 
+// id 是連線用的身分（訪客存在瀏覽器裡的代號，或 user:帳號編號），只有本人知道；
+// publicId 是給房間裡其他人看的代號
 type Player = {
   id: string;
+  publicId: string;
   name: string;
   socketId: string | null;
   roomCode: string | null;
@@ -65,9 +90,38 @@ const rooms = new Map<string, Room>();
 const leaveTimers = new Map<string, NodeJS.Timeout>(); // playerId -> 斷線移出計時
 let queue: string[] = []; // 自動配對排隊中的 playerId
 
-const httpServer = createServer();
-const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
-  cors: { origin: true },
+const { db, label: dbLabel } = await openDb({
+  url: process.env.DATABASE_URL,
+  pgliteDir: process.env.PGLITE_DIR,
+});
+const handleAuth = createAuthHandler(db, { publicOrigin: PUBLIC_ORIGIN, google: GOOGLE });
+
+const httpServer = createServer(async (req, res) => {
+  if (await handleAuth(req, res)) return;
+  res.writeHead(404).end();
+});
+const io = new Server<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  Record<string, never>,
+  SocketData
+>(httpServer, {
+  cors: { origin: PUBLIC_ORIGIN },
+});
+
+// 連線時用 cookie 找出登入的帳號。別的網站發起的連線不採用 cookie，只當訪客
+io.use(async (socket, next) => {
+  const origin = socket.handshake.headers.origin;
+  try {
+    socket.data.account =
+      !origin || origin === PUBLIC_ORIGIN
+        ? await accountFromCookie(db, socket.handshake.headers.cookie)
+        : null;
+    next();
+  } catch (err) {
+    console.error("讀取登入狀態失敗", err);
+    next(new Error("伺服器錯誤"));
+  }
 });
 
 // ---- 小工具 ----
@@ -98,6 +152,8 @@ const cleanName = (name: unknown) =>
 
 const isOnline = (playerId: string) => !!players.get(playerId)?.socketId;
 
+const publicIdOf = (playerId: string) => players.get(playerId)?.publicId ?? "?";
+
 const socketOf = (playerId: string): GameSocket | undefined => {
   const socketId = players.get(playerId)?.socketId;
   return socketId ? io.sockets.sockets.get(socketId) : undefined;
@@ -124,7 +180,7 @@ function roomView(room: Room): RoomView {
               ? { kind: "ai" }
               : {
                   kind: "human",
-                  playerId: seat.playerId,
+                  playerId: publicIdOf(seat.playerId),
                   name: players.get(seat.playerId)?.name ?? "?",
                   online: isOnline(seat.playerId),
                 },
@@ -134,11 +190,11 @@ function roomView(room: Room): RoomView {
     : null;
   return {
     code: room.code,
-    hostId: room.hostId,
+    hostId: publicIdOf(room.hostId),
     status: room.status,
     round: room.round,
     members: room.memberIds.map((id) => ({
-      playerId: id,
+      playerId: publicIdOf(id),
       name: players.get(id)?.name ?? "?",
       online: isOnline(id),
     })),
@@ -374,10 +430,15 @@ const isMove = (v: unknown): v is MoveMsg => {
 
 io.on("connection", (socket: GameSocket) => {
   const auth = socket.handshake.auth as Partial<HandshakeAuth>;
-  const playerId =
-    typeof auth.playerId === "string" && auth.playerId.length <= 64
+  const account = socket.data.account;
+  const guestId =
+    typeof auth.playerId === "string" &&
+    auth.playerId.length <= 64 &&
+    !auth.playerId.startsWith(USER_PREFIX)
       ? auth.playerId
       : null;
+  // 登入的話用帳號當身分，換電腦也是同一個人
+  const playerId = account ? USER_PREFIX + account.id : guestId;
   if (!playerId) {
     socket.disconnect(true);
     return;
@@ -389,12 +450,25 @@ io.on("connection", (socket: GameSocket) => {
     io.sockets.sockets.get(player.socketId)?.disconnect(true);
   }
   if (!player) {
-    player = { id: playerId, name: "", socketId: null, roomCode: null };
+    player = {
+      id: playerId,
+      publicId: randomUUID(),
+      name: "",
+      socketId: null,
+      roomCode: null,
+    };
     players.set(playerId, player);
   }
   const me = player;
-  me.name = cleanName(auth.name);
+  me.name = cleanName(auth.name || account?.name);
   me.socketId = socket.id;
+  // 在大廳改的暱稱存回帳號
+  if (account && me.name !== account.name) {
+    renameAccount(db, account.id, me.name).catch((err) =>
+      console.error("儲存暱稱失敗", err)
+    );
+  }
+  socket.emit("session:me", me.publicId);
 
   // 重新連線：回到原本的房間
   const timer = leaveTimers.get(playerId);
@@ -523,4 +597,6 @@ io.on("connection", (socket: GameSocket) => {
 
 httpServer.listen(PORT, () => {
   console.log(`三國象棋伺服器啟動：http://localhost:${PORT}`);
+  console.log(`資料庫：${dbLabel}`);
+  console.log(`Google 登入：${GOOGLE ? "已設定" : "未設定（.env 沒有 GOOGLE_CLIENT_ID / SECRET）"}`);
 });

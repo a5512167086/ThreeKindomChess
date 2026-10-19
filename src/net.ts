@@ -1,9 +1,11 @@
-// 連線工具：玩家身分（存在瀏覽器）與 Socket.IO 連線
+// 連線工具：玩家身分（存在瀏覽器）、帳號登入與 Socket.IO 連線
 
 import { io, type Socket } from "socket.io-client";
 import type {
   ClientToServerEvents,
   HandshakeAuth,
+  LoginProvider,
+  MeResponse,
   ServerToClientEvents,
 } from "./protocol";
 
@@ -52,6 +54,30 @@ export const saveName = (name: string) => write(KEYS.name, name);
 
 export const savedRoom = () => read(KEYS.room);
 export const saveRoom = (code: string | null) => write(KEYS.room, code);
+
+// ---- 帳號（登入狀態存在 cookie，由伺服器管理）----
+
+// 點了就整頁導去登入，登入完會回到首頁
+export const loginUrl = (provider: LoginProvider) => `/auth/${provider}`;
+
+// 伺服器沒開的話回傳 null
+export async function fetchMe(): Promise<MeResponse | null> {
+  try {
+    const res = await fetch("/auth/me", { credentials: "same-origin" });
+    return res.ok ? ((await res.json()) as MeResponse) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function logout(): Promise<boolean> {
+  try {
+    const res = await fetch("/auth/logout", { method: "POST", credentials: "same-origin" });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
 
 // 連到同一個網址的 /socket.io（開發時由 Vite 轉給伺服器）
 export function connect(name: string): GameSocket {

@@ -25,3 +25,7 @@ dist-ssr
 
 # Claude Code
 .claude/
+
+# 本機設定（有密碼）與本機資料庫
+.env
+.data/
