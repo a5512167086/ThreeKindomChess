@@ -119,10 +119,10 @@ export function LocalGame({ onExit }: { onExit: () => void }) {
       onReviewingChange={onReviewingChange}
       controls={
         <>
-          <div>
+          <div className="row">
             電腦下：
             {TURN_ORDER.map((side) => (
-              <label key={side} style={{ marginRight: 12, cursor: "pointer" }}>
+              <label key={side}>
                 <input
                   type="checkbox"
                   checked={aiSides.includes(side)}
@@ -132,8 +132,8 @@ export function LocalGame({ onExit }: { onExit: () => void }) {
               </label>
             ))}
           </div>
-          <div>
-            <label style={{ cursor: "pointer" }}>
+          <div className="row">
+            <label>
               <input
                 type="checkbox"
                 checked={celestial}
@@ -141,13 +141,11 @@ export function LocalGame({ onExit }: { onExit: () => void }) {
               />
               星象規則
             </label>
-            {celestial !== game.celestial && (
-              <span style={{ fontSize: 13, opacity: 0.7 }}>（重新開始後生效）</span>
-            )}
+            {celestial !== game.celestial && <span className="note">重新開始後生效</span>}
           </div>
-          <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
-            <button onClick={restart}>重新開始</button>
+          <div className="row">
             <button onClick={onExit}>回大廳</button>
+            <button onClick={restart}>重新開始</button>
           </div>
         </>
       }

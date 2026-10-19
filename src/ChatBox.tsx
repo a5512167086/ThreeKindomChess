@@ -18,7 +18,7 @@ type ChatBoxProps = {
   onSend: (text: string) => void;
 };
 
-// 與某一家的私聊視窗
+// 與某一家的密談便箋；收起時只剩一條書籤（接通的點、未讀數、展開箭頭）
 export function ChatBox({
   title,
   accent,
@@ -30,8 +30,8 @@ export function ChatBox({
 }: ChatBoxProps) {
   const [draft, setDraft] = useState("");
 
-  // 縮小：只留標題列；縮小期間收到的訊息顯示成未讀數
-  const [collapsed, setCollapsed] = useState(false);
+  // 還沒接通時先收起來；收起期間收到的訊息顯示成未讀數
+  const [collapsed, setCollapsed] = useState(!open);
   const [seenCount, setSeenCount] = useState(0);
   const unread = collapsed ? Math.max(0, lines.length - seenCount) : 0;
   const toggle = () => {
@@ -53,89 +53,43 @@ export function ChatBox({
   };
 
   return (
-    <div
-      style={{
-        position: "absolute",
-        bottom: 16,
-        [corner]: 16,
-        width: 260,
-        height: collapsed ? "auto" : 220,
-        zIndex: 1,
-        display: "flex",
-        flexDirection: "column",
-        background: "rgba(15, 23, 42, 0.9)",
-        border: `1px solid ${open ? accent : "#334155"}`,
-        borderRadius: 8,
-        color: "#e5e7eb",
-        fontSize: 13,
-        opacity: open ? 1 : 0.75,
-      }}
-    >
-      {/* 標題列：點一下縮小 / 展開 */}
-      <div
+    <section className={`chat chat-${corner}${collapsed ? " is-collapsed" : ""}`}>
+      <button
+        className="chat-toggle"
         onClick={toggle}
-        title={collapsed ? "展開" : "縮小"}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "6px 10px",
-          borderBottom: collapsed ? "none" : "1px solid #334155",
-          cursor: "pointer",
-          userSelect: "none",
-        }}
+        aria-expanded={!collapsed}
+        title={collapsed ? "展開" : "收起"}
       >
-        <span style={{ color: accent, fontWeight: "bold", flex: 1 }}>
+        {collapsed && <span className={`chat-dot${open ? " on" : ""}`} />}
+        <span className="chat-title" style={{ color: accent }}>
           {title}
-          {unread > 0 && (
-            <span
-              style={{
-                marginLeft: 6,
-                padding: "0 6px",
-                borderRadius: 8,
-                background: "#dc2626",
-                color: "#fff",
-                fontSize: 11,
-              }}
-            >
-              {unread}
-            </span>
-          )}
         </span>
-        <span style={{ fontSize: 12, color: open ? "#4ade80" : "#94a3b8" }}>
-          {open ? "● 已接通" : "○ 未接通"}
-        </span>
-        <span style={{ width: 12, textAlign: "center" }}>
-          {collapsed ? "＋" : "－"}
-        </span>
-      </div>
+        {!collapsed && (
+          <span className={`chat-state${open ? " on" : ""}`}>
+            {open ? "已接通" : "未接通"}
+          </span>
+        )}
+        {collapsed && !open && <span className="sr-only">（未接通）</span>}
+        {unread > 0 && <span className="chat-badge">{unread}</span>}
+        <svg className="chat-chevron" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+          <path d={collapsed ? "M2 9.5L7 4.5L12 9.5" : "M2 4.5L7 9.5L12 4.5"} stroke="currentColor" strokeWidth="1.6" />
+        </svg>
+      </button>
 
       {!collapsed && (
-        <>
-          <div style={{ flex: 1, overflowY: "auto", padding: "6px 10px" }}>
-            {lines.length === 0 && (
-              <div style={{ opacity: 0.5 }}>{open ? "還沒有訊息" : closedHint}</div>
-            )}
+        <div className="chat-body">
+          <div className="chat-lines">
+            {lines.length === 0 && <p className="hint">{open ? "還沒有訊息" : closedHint}</p>}
             {lines.map((l) => (
-              <div
-                key={l.key}
-                style={{ textAlign: l.mine ? "right" : "left", marginBottom: 4 }}
-              >
-                <span style={{ color: l.color, fontWeight: "bold" }}>{l.name}</span>
-                ：{l.text}
-              </div>
+              <p key={l.key}>
+                <span style={{ color: l.color, fontWeight: 600 }}>{l.mine ? "你" : l.name}</span>：
+                {l.text}
+              </p>
             ))}
             <div ref={endRef} />
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              gap: 4,
-              padding: 6,
-              borderTop: "1px solid #334155",
-            }}
-          >
+          <div className="chat-input">
             <input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
@@ -144,15 +98,15 @@ export function ChatBox({
                 if (e.key === "Enter" && !e.nativeEvent.isComposing) send();
               }}
               disabled={!open}
-              placeholder={open ? "輸入訊息…" : closedHint}
-              style={{ flex: 1, minWidth: 0 }}
+              placeholder={open ? "寫給對方的話" : "還不能密談"}
+              aria-label={`${title}的訊息`}
             />
             <button onClick={send} disabled={!open || !draft.trim()}>
               送出
             </button>
           </div>
-        </>
+        </div>
       )}
-    </div>
+    </section>
   );
 }

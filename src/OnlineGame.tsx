@@ -10,7 +10,7 @@ import { type ChatMessage, type RoomView, ROOM_SIZE } from "./protocol";
 import { type GameSocket, connect, saveRoom } from "./net";
 import { type Clock, fromClockView } from "./clock";
 import { GameView } from "./GameView";
-import { PANEL_COLORS, sideName } from "./sides";
+import { SIDE_INK, sideName } from "./sides";
 
 export type OnlineAction =
   | { type: "create" }
@@ -256,18 +256,17 @@ export function OnlineGame({
         }
         controls={
           <>
-            <div style={{ fontSize: 14, opacity: 0.8 }}>
+            <p className="note">
               房號 {room.code}
               {mySeat && (
                 <>
-                  ・你是
-                  <span style={{ color: PANEL_COLORS[mySeat].stroke }}>
-                    {sideName(mySeat)}
-                  </span>
+                  ，你是
+                  <span style={{ color: SIDE_INK[mySeat] }}>{sideName(mySeat)}</span>
                 </>
               )}
-            </div>
-            <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+            </p>
+            <div className="row">
+              <button onClick={leave}>離開房間</button>
               {room.status === "finished" &&
                 (isHost ? (
                   <button
@@ -276,9 +275,8 @@ export function OnlineGame({
                     再來一局
                   </button>
                 ) : (
-                  <span style={{ fontSize: 14 }}>等待房主開新局…</span>
+                  <span className="note">等待房主開新局…</span>
                 ))}
-              <button onClick={leave}>離開房間</button>
             </div>
           </>
         }

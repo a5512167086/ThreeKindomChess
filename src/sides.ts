@@ -17,6 +17,13 @@ export const PANEL_COLORS: Record<
   Right: { fill: "#dbeafe", text: "#1e3a8a", stroke: "#93c5fd" }, // 藍
 };
 
+// 紙底上的各方顏色（對局畫面的棋子、棋譜、狀態）：朱砂、墨、石青
+export const SIDE_INK: Record<Side, string> = {
+  Center: "#c23b22",
+  Left: "#2a2a2a",
+  Right: "#3a62a0",
+};
+
 export const PANEL_NAMES: Record<Side, string> = {
   Center: "紅",
   Left: "黑",

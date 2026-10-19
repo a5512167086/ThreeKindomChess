@@ -1,20 +1,5 @@
 /* 大廳：奏摺的封面（磁青）與內頁（宣紙）。設計稿在 Figma「三垣 UI」。 */
 
-:root {
-  --ground: #17223b; /* 磁青 */
-  --deep: #111a2e; /* 深磁青：書衣 */
-  --gold: #c9a45c; /* 泥金 */
-  --paper-white: #efe8d8; /* 宣白：題簽、深底上的字 */
-  --dim: #a9a495; /* 淡墨：深底上的說明 */
-  --vermilion: #c23b22; /* 朱砂 */
-  --ink: #2a2a2a; /* 墨 */
-  --paper: #e8e0cc; /* 宣紙：內頁 */
-  --grey-ink: #6e6656; /* 灰墨：紙上的說明 */
-  --fold: rgb(156 143 114 / 0.7); /* 摺痕 */
-  --kai: "LXGW WenKai TC", "Kaiti TC", "BiauKai", "KaiTi", serif;
-  --song: "Noto Serif TC", "Songti TC", "PMingLiU", serif;
-}
-
 .memorial {
   --panel: clamp(160px, 25vw, 360px); /* 翻開後封面留在右邊的寬度 */
   --slip-h: min(600px, 64vh); /* 封面上題簽的高度 */

@@ -249,19 +249,19 @@ function ReplayView({ record, onBack }: { record: GameRecord; onBack: () => void
       onMove={() => {}}
       startAtOpening
       controls={
-        <div style={{ marginTop: 8 }}>
-          <div style={{ fontSize: 13, color: "#94a3b8" }}>
-            {formatTime(record.finishedAt)} 的對局・用右上的棋譜或鍵盤 ← → 一步一步看
-          </div>
+        <>
+          <p className="note">
+            {formatTime(record.finishedAt)} 的對局。用右上的符號或鍵盤 ← → 一步一步看
+          </p>
           {incomplete && (
-            <div style={{ fontSize: 13, color: "#fbbf24" }}>
+            <p className="note" style={{ color: "var(--vermilion)" }}>
               這局是舊版規則下的，只能重播前 {game.history.length} 步
-            </div>
+            </p>
           )}
-          <button style={{ marginTop: 6 }} onClick={onBack}>
-            回棋譜列表
-          </button>
-        </div>
+          <div className="row">
+            <button onClick={onBack}>回棋譜列表</button>
+          </div>
+        </>
       }
     />
   );

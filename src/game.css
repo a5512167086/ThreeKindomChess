@@ -1,0 +1,499 @@
+/* 對局畫面：宣紙底、墨線棋盤；左上狀態、右上直書棋譜、左下右下密談便箋 */
+
+.game {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--song);
+}
+.game-board {
+  position: absolute;
+  inset: 0;
+}
+
+.game p,
+.game h2,
+.game ul,
+.game ol {
+  margin: 0;
+  padding: 0;
+}
+.game .note {
+  font-size: 12px;
+  color: var(--grey-ink);
+}
+.game .fold-rule {
+  height: 1px;
+  border: 0;
+  margin: 0;
+  background: var(--fold);
+}
+
+/* 各方的小方印：紅、黑、藍 */
+.side-seal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--seal-size, 22px);
+  height: var(--seal-size, 22px);
+  border-radius: 3px;
+  color: var(--ivory);
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: calc(var(--seal-size, 22px) * 0.62);
+  line-height: 1;
+}
+
+/* ---- 左上：狀態 ---- */
+
+.game-status {
+  position: absolute;
+  top: 36px;
+  left: 36px;
+  z-index: 1;
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  pointer-events: none; /* 讓點擊穿過空白處到棋盤 */
+}
+.game-status > * {
+  pointer-events: auto;
+}
+
+.turn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  --seal-size: 36px;
+}
+.turn-main {
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 26px;
+  line-height: 1.2;
+}
+.turn-sub {
+  font-size: 14px;
+  color: var(--grey-ink);
+}
+
+.alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+}
+.alert-check {
+  color: var(--vermilion);
+  font-weight: 600;
+}
+.alert-quiet {
+  color: var(--grey-ink);
+}
+
+.sky {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sky-label {
+  font-family: var(--kai);
+  font-size: 14px;
+  color: var(--grey-ink);
+}
+.sky-mansion {
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: 0.04em;
+}
+.sky-phase {
+  font-size: 14px;
+}
+.sky-phase b {
+  font-family: var(--kai);
+  font-size: 17px;
+  margin-right: 8px;
+}
+
+.clocks {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.clocks li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  opacity: 0.75;
+}
+.clocks li.active {
+  opacity: 1;
+}
+.clocks li.out {
+  opacity: 0.35;
+}
+.clocks .who {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.clocks .time {
+  font-size: 15px;
+}
+.clocks li.active .time {
+  color: var(--vermilion);
+}
+
+/* 各畫面自己放的操作（重新開始、回大廳、電腦下哪幾家…） */
+.game-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 14px;
+}
+.game-controls button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 16px;
+  cursor: pointer;
+}
+.game-controls button:hover:not(:disabled) {
+  color: var(--vermilion);
+}
+.game-controls button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.game-controls .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  align-items: center;
+}
+.game-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.game-controls input[type="checkbox"] {
+  accent-color: var(--vermilion);
+}
+
+.game button:focus-visible,
+.game input:focus-visible,
+.move-strip li:focus-visible {
+  outline: 2px dashed var(--vermilion);
+  outline-offset: 3px;
+}
+
+/* ---- 右上：直書棋譜，由右往左，最新的在左邊 ---- */
+
+.game-moves {
+  position: absolute;
+  top: 36px;
+  right: 36px;
+  z-index: 1;
+  max-width: 230px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+.moves-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.moves-head h2 {
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 22px;
+}
+.move-strip {
+  list-style: none;
+  display: flex;
+  flex-direction: row-reverse; /* 第一步在最右邊 */
+  max-width: 230px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  border-top: 1px solid var(--fold);
+  border-bottom: 1px solid var(--fold);
+}
+.move-strip li {
+  flex: none;
+  writing-mode: vertical-rl;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 132px; /* 直書時 inline 是上下方向 */
+  padding: 10px 6px;
+  border-left: 1px solid rgb(156 143 114 / 0.45);
+  cursor: pointer;
+}
+.move-strip li:hover {
+  background: rgb(194 59 34 / 0.05);
+}
+.move-strip li.active {
+  background: rgb(194 59 34 / 0.09);
+}
+.move-strip li.empty {
+  cursor: default;
+  color: var(--grey-ink);
+  font-size: 13px;
+}
+.move-strip .num {
+  font-family: var(--kai);
+  font-size: 11px;
+  color: var(--grey-ink);
+}
+.move-strip .who {
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 14px;
+}
+.move-strip .text {
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: 0.04em;
+}
+
+.move-nav {
+  align-self: stretch;
+  display: flex;
+  justify-content: center;
+  gap: 22px;
+}
+.move-nav button {
+  display: flex;
+  padding: 2px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+.move-nav button:hover:not(:disabled) {
+  color: var(--vermilion);
+}
+.move-nav button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* ---- 左下、右下：密談便箋 ---- */
+
+.chat {
+  position: absolute;
+  bottom: 36px;
+  z-index: 1;
+  width: 280px;
+  box-sizing: border-box;
+  background: rgb(244 238 223 / 0.95);
+  border: 1px solid var(--fold);
+  box-shadow: 0 3px 10px rgb(64 46 20 / 0.18);
+  font-size: 14px;
+}
+.chat-left {
+  left: 36px;
+}
+.chat-right {
+  right: 36px;
+}
+.chat-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 14px 12px 16px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.chat:not(.is-collapsed) .chat-toggle {
+  padding-bottom: 10px;
+}
+.chat-title {
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 17px;
+}
+.chat-state {
+  font-size: 12px;
+  color: var(--grey-ink);
+}
+.chat-state.on {
+  color: var(--green);
+}
+.chat-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1.2px solid var(--grey-ink);
+}
+.chat-dot.on {
+  border-color: var(--green);
+  background: var(--green);
+}
+.chat-badge {
+  padding: 0 6px;
+  border-radius: 3px;
+  background: var(--vermilion);
+  color: var(--ivory);
+  font-size: 12px;
+}
+.chat-chevron {
+  margin-left: auto;
+  flex: none;
+  color: rgb(42 42 42 / 0.7);
+}
+.chat-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 16px;
+  padding: 10px 0 14px;
+  border-top: 1px solid var(--fold);
+}
+.chat-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+.chat-lines .hint {
+  font-size: 13px;
+  color: var(--grey-ink);
+}
+.chat-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid rgb(42 42 42 / 0.6);
+}
+.chat-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+}
+.chat-input input::placeholder {
+  color: var(--grey-ink);
+}
+.chat-input input:focus-visible {
+  outline: none;
+}
+.chat-input button {
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--vermilion);
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+.chat-input button:disabled {
+  color: var(--grey-ink);
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* 窄螢幕：字縮小、密談收窄 */
+@media (max-width: 900px) {
+  .game-status,
+  .game-moves {
+    top: 12px;
+  }
+  .game-status {
+    left: 12px;
+    width: 180px;
+    gap: 10px;
+  }
+  .game-moves {
+    right: 12px;
+    max-width: 150px;
+  }
+  .move-strip {
+    max-width: 150px;
+  }
+  .chat {
+    width: 220px;
+    bottom: 12px;
+  }
+  .chat-left {
+    left: 12px;
+  }
+  .chat-right {
+    right: 12px;
+  }
+}
+
+/* 手機：狀態和棋譜在上面、棋盤在中間、兩個密談平分底部 */
+@media (max-width: 760px) {
+  .game-status {
+    width: calc(62vw - 24px);
+    gap: 8px;
+    font-size: 12px;
+  }
+  .turn {
+    --seal-size: 28px;
+  }
+  .turn-main {
+    font-size: 20px;
+  }
+  .sky-mansion {
+    font-size: 17px;
+  }
+  .sky-phase,
+  .clocks,
+  .game-controls {
+    font-size: 12px;
+  }
+  .clocks {
+    gap: 6px;
+  }
+  .game-controls button {
+    font-size: 14px;
+  }
+  .game-moves {
+    max-width: calc(38vw - 12px);
+  }
+  .move-strip {
+    max-width: calc(38vw - 12px);
+  }
+  .chat {
+    width: calc(50vw - 18px);
+  }
+  .chat-title {
+    font-size: 14px;
+  }
+  .chat-toggle {
+    padding: 10px;
+  }
+}

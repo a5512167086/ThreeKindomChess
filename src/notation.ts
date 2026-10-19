@@ -18,6 +18,22 @@ export const KIND_LABELS: Record<Kind, string> = {
 
 const NUMERALS = ["一", "二", "三", "四", "五", "六", "七", "八", "九"];
 
+// 中文數字（步數、輪數用）：7 → 七、12 → 十二、105 → 一百〇五；一千以上直接用阿拉伯數字
+export function chineseNumber(n: number): string {
+  const digit = (d: number) => (d === 0 ? "〇" : NUMERALS[d - 1]);
+  if (n < 1 || n >= 1000 || !Number.isInteger(n)) return String(n);
+  if (n < 10) return digit(n);
+  if (n < 100) {
+    const tens = Math.floor(n / 10), ones = n % 10;
+    return `${tens === 1 ? "" : digit(tens)}十${ones ? digit(ones) : ""}`;
+  }
+  const hundreds = Math.floor(n / 100), rest = n % 100;
+  if (rest === 0) return `${digit(hundreds)}百`;
+  if (rest < 10) return `${digit(hundreds)}百〇${digit(rest)}`;
+  // 一百一十二：百位後面的十要寫「一十」
+  return `${digit(hundreds)}百${rest < 20 ? "一" : ""}${chineseNumber(rest)}`;
+}
+
 // 斜著走的棋子，最後的數字寫「到第幾路」；直著走的進退寫「走幾步」
 const DIAGONAL_KINDS: Kind[] = ["horse", "elephant", "advisor"];
 

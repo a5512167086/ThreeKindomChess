@@ -1,26 +1,27 @@
 // 棋盤繪製：三片彎曲面板、接縫、棋子、落點提示、最後一步箭頭
 // 整個棋盤會依「我」的座位旋轉，讓自己那一家永遠在下方。
+// 樣式：宣紙底、墨線，各方地盤一層淡淡的己方顏色；棋子是象牙圓片＋楷書字。
 
-import { type JSX, useMemo } from "react";
+import { type JSX, useEffect, useMemo, useState } from "react";
 import {
   Stage,
   Layer,
   Line,
   Group,
   Circle,
-  Rect,
   Text,
   Arrow,
 } from "react-konva";
 import type { Piece, Pos, Side } from "./rules";
 import { KIND_LABELS } from "./notation";
-import { PANEL_COLORS } from "./sides";
+import { SIDE_INK } from "./sides";
 
 const VERTICALS = 9;
 const HORIZONTALS = 5;
 const PANEL_WIDTH = 1200;
 const PANEL_HEIGHT = 400;
-const LINE_COLOR = "#e5e7eb";
+const LINE_COLOR = "rgba(42, 42, 42, 0.6)"; // 墨線
+const LINE_WIDTH = 2.5;
 const TOP_FOLD = 250;
 const SHRINK_PER_ROW = 80;
 
@@ -28,9 +29,16 @@ const SHRINK_PER_ROW = 80;
 const TRIANGLE_SIDE = 300;
 const HUB_Y = -TOP_FOLD - TRIANGLE_SIDE / Math.sqrt(3);
 
-const SELECT_COLOR = "#facc15";
-const TARGET_COLOR = "#4ade80";
-const LAST_MOVE_COLOR = "#f59e0b";
+const SELECT_COLOR = "#c23b22"; // 選中：朱砂
+const TARGET_COLOR = "#3e8a5f"; // 可以走：石綠
+const LAST_MOVE_COLOR = "#c23b22";
+const TERRITORY_OPACITY = 0.06;
+
+// 棋子（棋盤座標的大小，會跟著整盤縮放）
+const PIECE_R = 44;
+const PIECE_FILL = "#f4eedf"; // 象牙
+const PIECE_FONT = '"LXGW WenKai TC", "Kaiti TC", "BiauKai", "KaiTi", serif';
+const PIECE_CHARS = Object.values(KIND_LABELS).join("");
 
 type PanelTransform = { x: number; y: number; rotation: number };
 
@@ -98,6 +106,16 @@ function buildGridRows(): [number, number][][] {
 
 const GRID_ROWS = buildGridRows();
 
+// 一片面板的外框（A 排 → 右緣 → E 排反向 → 左緣），用來畫地盤底色
+const PANEL_OUTLINE: number[] = [
+  ...GRID_ROWS[0],
+  ...GRID_ROWS.slice(1).map((r) => r[VERTICALS - 1]),
+  ...[...GRID_ROWS[HORIZONTALS - 1]].reverse().slice(1),
+  ...GRID_ROWS.slice(1, HORIZONTALS - 1)
+    .reverse()
+    .map((r) => r[0]),
+].flat();
+
 // 跨面板連線：[面板, row, col] -> [面板, row, col]
 const SEAM_LINKS: [[Side, number, number], [Side, number, number]][] = [
   [
@@ -147,19 +165,23 @@ function boardBounds(rotation: number) {
   };
 }
 
-// 讓整個棋盤剛好塞進 w x h 的視窗並置中
-function fitView(w: number, h: number, rotation: number) {
+export type Reserve = { left: number; right: number; top: number; bottom: number };
+
+// 讓整個棋盤剛好塞進 w x h 的視窗扣掉 reserve（留給狀態列、棋譜）後的區域並置中
+function fitView(w: number, h: number, rotation: number, reserve: Reserve) {
   const { minX, maxX, minY, maxY } = boardBounds(rotation);
-  const scale = Math.min(w / (maxX - minX), h / (maxY - minY));
+  const innerW = Math.max(1, w - reserve.left - reserve.right);
+  const innerH = Math.max(1, h - reserve.top - reserve.bottom);
+  const scale = Math.min(innerW / (maxX - minX), innerH / (maxY - minY));
   return {
     scale,
-    x: w / 2 - ((minX + maxX) / 2) * scale,
-    y: h / 2 - ((minY + maxY) / 2) * scale,
+    x: reserve.left + innerW / 2 - ((minX + maxX) / 2) * scale,
+    y: reserve.top + innerH / 2 - ((minY + maxY) / 2) * scale,
   };
 }
 
 // 箭頭終點停在棋子邊緣，不蓋住落點的棋子
-const ARROW_GAP = 38;
+const ARROW_GAP = PIECE_R + 6;
 function arrowPoints(from: Pos, to: Pos): number[] {
   const [x1, y1] = boardPoint(from);
   const [x2, y2] = boardPoint(to);
@@ -173,7 +195,8 @@ type WarpedPanelProps = {
   pieces: Piece[]; // 目前位在這片面板上的棋子
   selectedId: string | null;
   targets: Pos[]; // 選中棋子在這片面板上的合法落點
-  lastMove: Pos[]; // 最後一步的起點與終點（在這片面板上的部分）
+  lastFrom?: Pos; // 正在看的那一步的起點（在這片面板上才有）
+  lastTo?: Pos; // 正在看的那一步的終點（在這片面板上才有）
   onPick: (pos: Pos) => void;
 };
 
@@ -183,7 +206,8 @@ function WarpedPanel({
   pieces,
   selectedId,
   targets,
-  lastMove,
+  lastFrom,
+  lastTo,
   onPick,
 }: WarpedPanelProps) {
   const { verticals, horizontals, crosses, gridPoints } = useMemo(() => {
@@ -200,7 +224,7 @@ function WarpedPanel({
           key={`h-${j}`}
           points={rowPoints.flat()}
           stroke={LINE_COLOR}
-          strokeWidth={2}
+          strokeWidth={LINE_WIDTH}
           lineCap="round"
           lineJoin="round"
           listening={false}
@@ -218,7 +242,7 @@ function WarpedPanel({
           key={`v-${i}`}
           points={vertPoints}
           stroke={LINE_COLOR}
-          strokeWidth={2}
+          strokeWidth={LINE_WIDTH}
           listening={false}
         />
       );
@@ -243,7 +267,7 @@ function WarpedPanel({
         key="bigx-tl-mid"
         points={[tlx, tly, mx, my]}
         stroke={LINE_COLOR}
-        strokeWidth={2}
+        strokeWidth={LINE_WIDTH}
         listening={false}
       />
     );
@@ -252,7 +276,7 @@ function WarpedPanel({
         key="bigx-mid-br"
         points={[mx, my, brx, bry]}
         stroke={LINE_COLOR}
-        strokeWidth={2}
+        strokeWidth={LINE_WIDTH}
         listening={false}
       />
     );
@@ -261,7 +285,7 @@ function WarpedPanel({
         key="bigx-tr-mid"
         points={[trx, try_, mx, my]}
         stroke={LINE_COLOR}
-        strokeWidth={2}
+        strokeWidth={LINE_WIDTH}
         listening={false}
       />
     );
@@ -270,7 +294,7 @@ function WarpedPanel({
         key="bigx-mid-bl"
         points={[mx, my, blx, bly]}
         stroke={LINE_COLOR}
-        strokeWidth={2}
+        strokeWidth={LINE_WIDTH}
         listening={false}
       />
     );
@@ -304,15 +328,43 @@ function WarpedPanel({
 
   return (
     <Group>
+      {/* 地盤：一層淡淡的己方顏色 */}
+      <Line
+        points={PANEL_OUTLINE}
+        closed
+        fill={SIDE_INK[panelTag]}
+        opacity={TERRITORY_OPACITY}
+        listening={false}
+      />
       {horizontals}
       {verticals}
       {crosses}
 
-      {/* 棋子（不攔截滑鼠事件） */}
+      {/* 最後一步：起點畫虛線小圈（在棋子底下） */}
+      {lastFrom &&
+        (() => {
+          const pt = pointMap.get(pointKey(lastFrom.row, lastFrom.col));
+          return (
+            pt && (
+              <Circle
+                x={pt.x}
+                y={pt.y}
+                radius={PIECE_R * 0.55}
+                stroke={LAST_MOVE_COLOR}
+                strokeWidth={4}
+                dash={[10, 7]}
+                opacity={0.7}
+                listening={false}
+              />
+            )
+          );
+        })()}
+
+      {/* 棋子：象牙圓片、外粗內細兩圈、楷書字（不攔截滑鼠事件） */}
       {pieces.map((pc) => {
         const pt = pointMap.get(pointKey(pc.pos.row, pc.pos.col));
         if (!pt) return null;
-        const color = PANEL_COLORS[pc.owner];
+        const ink = SIDE_INK[pc.owner];
         const selected = pc.id === selectedId;
         // 過河到別人面板的棋子轉 180°，與那片面板的棋子面對面
         const rotation = pc.owner === panelTag ? 0 : 180;
@@ -324,46 +376,57 @@ function WarpedPanel({
             rotation={rotation}
             listening={false}
           >
+            {selected && (
+              <Circle radius={PIECE_R + 10} stroke={SELECT_COLOR} strokeWidth={5} />
+            )}
             <Circle
-              radius={35}
-              fill={color.fill}
-              stroke={selected ? SELECT_COLOR : color.stroke}
-              strokeWidth={selected ? 5 : 2}
+              radius={PIECE_R}
+              fill={PIECE_FILL}
+              stroke={ink}
+              strokeWidth={5}
+              shadowColor="#40301a"
+              shadowBlur={6}
+              shadowOffsetY={4}
+              shadowOpacity={0.35}
             />
+            <Circle radius={PIECE_R - 10} stroke={ink} strokeWidth={2} opacity={0.6} />
             <Text
               text={KIND_LABELS[pc.kind]}
-              fontSize={35}
+              fontFamily={PIECE_FONT}
               fontStyle="bold"
-              fill={color.text}
+              fontSize={PIECE_R * 1.12}
+              fill={ink}
+              width={PIECE_R * 2}
+              height={PIECE_R * 2}
+              offsetX={PIECE_R}
+              offsetY={PIECE_R - 2}
               align="center"
               verticalAlign="middle"
-              offsetX={18} // 粗估中文字寬度（Konva Text無置中基線，這樣看起來居中）
-              offsetY={14}
             />
           </Group>
         );
       })}
 
-      {/* 最後一步：起點與終點畫方框 */}
-      {lastMove.map((m) => {
-        const pt = pointMap.get(pointKey(m.row, m.col));
-        if (!pt) return null;
-        return (
-          <Rect
-            key={`last-${m.row}-${m.col}`}
-            x={pt.x - 42}
-            y={pt.y - 42}
-            width={84}
-            height={84}
-            stroke={LAST_MOVE_COLOR}
-            strokeWidth={4}
-            dash={[14, 8]}
-            listening={false}
-          />
-        );
-      })}
+      {/* 最後一步：終點的棋子外面一圈虛線 */}
+      {lastTo &&
+        (() => {
+          const pt = pointMap.get(pointKey(lastTo.row, lastTo.col));
+          if (!pt) return null;
+          return (
+            <Circle
+              x={pt.x}
+              y={pt.y}
+              radius={PIECE_R + 8}
+              stroke={LAST_MOVE_COLOR}
+              strokeWidth={3}
+              dash={[10, 7]}
+              opacity={0.7}
+              listening={false}
+            />
+          );
+        })()}
 
-      {/* 合法落點：空格畫小圓點，可吃的子畫外圈 */}
+      {/* 合法落點：空點畫綠色小點，可吃的子畫綠色外圈 */}
       {targets.map((t) => {
         const pt = pointMap.get(pointKey(t.row, t.col));
         if (!pt) return null;
@@ -375,9 +438,9 @@ function WarpedPanel({
             key={`target-${t.row}-${t.col}`}
             x={pt.x}
             y={pt.y}
-            radius={40}
+            radius={PIECE_R + 8}
             stroke={TARGET_COLOR}
-            strokeWidth={4}
+            strokeWidth={5}
             listening={false}
           />
         ) : (
@@ -385,8 +448,9 @@ function WarpedPanel({
             key={`target-${t.row}-${t.col}`}
             x={pt.x}
             y={pt.y}
-            radius={12}
+            radius={11}
             fill={TARGET_COLOR}
+            opacity={0.9}
             listening={false}
           />
         );
@@ -398,7 +462,7 @@ function WarpedPanel({
           key={`pt-${p.row}-${p.col}`}
           x={p.x}
           y={p.y}
-          radius={35} // 熱區可調（與棋子同大，點棋子任何地方都算）
+          radius={PIECE_R} // 與棋子同大，點棋子任何地方都算
           fill="white"
           opacity={0.001} // 幾乎看不見，但仍可點擊
           onClick={() => onPick({ panel: panelTag, row: p.row, col: p.col })}
@@ -417,8 +481,27 @@ type BoardProps = {
   selectedId: string | null;
   targets: Pos[];
   shownMove?: { from: Pos; to: Pos }; // 要標示的那一步
+  reserve?: Reserve; // 四周留給其他東西的空間
   onPick: (pos: Pos) => void;
 };
+
+const NO_RESERVE: Reserve = { left: 0, right: 0, top: 0, bottom: 0 };
+
+// 棋子的楷書是網路字型；畫布不會自己重畫，所以等字型載入後重畫一次
+function usePieceFont(): boolean {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    document.fonts
+      ?.load(`700 40px ${PIECE_FONT}`, PIECE_CHARS)
+      .then(() => alive && setReady(true))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return ready;
+}
 
 export function Board({
   width,
@@ -428,13 +511,16 @@ export function Board({
   selectedId,
   targets,
   shownMove,
+  reserve = NO_RESERVE,
   onPick,
 }: BoardProps) {
+  const fontReady = usePieceFont();
   // 旋轉整個棋盤，抵消自己面板的角度，讓自己在下方
   const viewRotation = -PANEL_TRANSFORMS[me].rotation;
+  const { left, right, top, bottom } = reserve;
   const view = useMemo(
-    () => fitView(width, height, viewRotation),
-    [width, height, viewRotation]
+    () => fitView(width, height, viewRotation, { left, right, top, bottom }),
+    [width, height, viewRotation, left, right, top, bottom]
   );
 
   const panelProps = (panel: Side) => ({
@@ -442,9 +528,8 @@ export function Board({
     pieces: pieces.filter((p) => p.pos.panel === panel),
     selectedId,
     targets: targets.filter((t) => t.panel === panel),
-    lastMove: shownMove
-      ? [shownMove.from, shownMove.to].filter((m) => m.panel === panel)
-      : [],
+    lastFrom: shownMove?.from.panel === panel ? shownMove.from : undefined,
+    lastTo: shownMove?.to.panel === panel ? shownMove.to : undefined,
     onPick,
   });
 
@@ -452,13 +537,12 @@ export function Board({
     <Stage
       width={width}
       height={height}
-      style={{ background: "#0f172a" }}
       x={view.x}
       y={view.y}
       scaleX={view.scale}
       scaleY={view.scale}
     >
-      <Layer>
+      <Layer key={fontReady ? "font" : "fallback"}>
         <Group rotation={viewRotation}>
           {/* 跨面板連線（畫在面板下層） */}
           {SEAM_LINKS.map(([[tagA, rowA, colA], [tagB, rowB, colB]]) => (
@@ -469,7 +553,7 @@ export function Board({
                 ...toBoard(PANEL_TRANSFORMS[tagB], GRID_ROWS[rowB][colB]),
               ]}
               stroke={LINE_COLOR}
-              strokeWidth={2}
+              strokeWidth={LINE_WIDTH}
               listening={false}
             />
           ))}
@@ -486,10 +570,10 @@ export function Board({
               points={arrowPoints(shownMove.from, shownMove.to)}
               stroke={LAST_MOVE_COLOR}
               fill={LAST_MOVE_COLOR}
-              strokeWidth={8}
-              pointerLength={28}
-              pointerWidth={28}
-              opacity={0.85}
+              strokeWidth={6}
+              pointerLength={24}
+              pointerWidth={24}
+              opacity={0.55}
               listening={false}
             />
           )}

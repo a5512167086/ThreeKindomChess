@@ -1,0 +1,28 @@
+/* 三垣的顏色與字型（大廳、對局、棋譜共用）。設計稿在 Figma「三垣 UI」。 */
+
+:root {
+  --ground: #17223b; /* 磁青 */
+  --deep: #111a2e; /* 深磁青：書衣 */
+  --gold: #c9a45c; /* 泥金 */
+  --paper-white: #efe8d8; /* 宣白：題簽、深底上的字 */
+  --dim: #a9a495; /* 淡墨：深底上的說明 */
+  --vermilion: #c23b22; /* 朱砂 */
+  --ink: #2a2a2a; /* 墨 */
+  --paper: #e8e0cc; /* 宣紙：內頁 */
+  --grey-ink: #6e6656; /* 灰墨：紙上的說明 */
+  --fold: rgb(156 143 114 / 0.7); /* 摺痕 */
+  --ivory: #f4eedf; /* 象牙：棋子、便箋 */
+  --green: #3e8a5f; /* 石綠：可以走、已接通 */
+  --kai: "LXGW WenKai TC", "Kaiti TC", "BiauKai", "KaiTi", serif;
+  --song: "Noto Serif TC", "Songti TC", "PMingLiU", serif;
+}
+
+/* 只給螢幕報讀器唸的文字 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

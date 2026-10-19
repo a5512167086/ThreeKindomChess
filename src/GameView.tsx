@@ -1,6 +1,6 @@
-// 對局畫面：棋盤 + 左上狀態 + 右上棋譜 + 左下右下私聊
-// 本機對電腦（LocalGame）與連線對戰（OnlineGame）共用，差別只在誰能操作、
-// 走棋與聊天要送去哪裡。
+// 對局畫面：棋盤 + 左上狀態 + 右上直書棋譜 + 左下右下密談
+// 本機對電腦（LocalGame）、連線對戰（OnlineGame）與看棋譜（Records）共用，
+// 差別只在誰能操作、走棋與聊天要送去哪裡。設計稿在 Figma「三垣 UI」的「對弈」。
 
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { Pos, Side } from "./rules";
@@ -14,6 +14,7 @@ import {
   phaseOf,
 } from "./game";
 import {
+  type Phase,
   PHASE_INFO,
   mansionAt,
   nextPhase,
@@ -22,14 +23,11 @@ import {
 } from "./sky";
 import type { ChatMessage } from "./protocol";
 import { ChatBox } from "./ChatBox";
-import { KIND_LABELS, moveNotation } from "./notation";
+import { KIND_LABELS, chineseNumber, moveNotation } from "./notation";
 import { type Clock, formatTime, timeLeft } from "./clock";
 import { Board } from "./Board";
-import { PANEL_COLORS, PANEL_NAMES, squareName } from "./sides";
-
-// 右上角棋譜框大小
-const MOVE_LIST_WIDTH = 260;
-const MOVE_LIST_MAX_HEIGHT = 280;
+import { PANEL_NAMES, SIDE_INK, squareName } from "./sides";
+import "./game.css";
 
 type MoveRecord = GameState["history"][number];
 
@@ -65,6 +63,14 @@ const leftOf = (side: Side) =>
 // 讀秒剩這麼少時轉紅色
 const CLOCK_WARN_MS = 10_000;
 
+// 四象在紙上的顏色：青龍青綠、玄武墨、白虎灰、朱雀朱砂
+const PHASE_INK: Record<Phase, string> = {
+  dragon: "#2f7d5b",
+  tortoise: "#2a2a2a",
+  tiger: "#7a7468",
+  bird: "#c23b22",
+};
+
 // 天象：目前的宿與四象效果，以及還剩幾輪換到下一個四象
 // round 是第幾輪，sky 是從角宿算起的宿數（開局的宿 + 輪數）
 function SkyStatus({ round, sky }: { round: number; sky: number }) {
@@ -72,18 +78,19 @@ function SkyStatus({ round, sky }: { round: number; sky: number }) {
   const info = PHASE_INFO[phase];
   const next = PHASE_INFO[nextPhase(phase)];
   return (
-    <div style={{ margin: "6px 0", fontSize: 15 }}>
-      <div>
-        天象：{mansionAt(sky)}宿・第 {round + 1} 輪
-      </div>
-      <div style={{ color: info.color, fontWeight: "bold" }}>
-        {info.name}：{info.effect}
-      </div>
-      <div style={{ fontSize: 13, opacity: 0.7 }}>
-        再 {roundsLeftInPhase(sky)} 輪後轉入
-        <span style={{ color: next.color }}>{next.name}</span>（{next.effect}）
-      </div>
-    </div>
+    <section className="sky">
+      <p className="sky-label">天象</p>
+      <p className="sky-mansion">
+        {mansionAt(sky)}宿{"　"}第{chineseNumber(round + 1)}輪
+      </p>
+      <p className="sky-phase">
+        <b style={{ color: PHASE_INK[phase] }}>{info.name}</b>
+        {info.effect}
+      </p>
+      <p className="note" title={`${next.name}：${next.effect}`}>
+        再{chineseNumber(roundsLeftInPhase(sky))}輪轉入{next.name}
+      </p>
+    </section>
   );
 }
 
@@ -138,7 +145,6 @@ export function GameView({
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  const [lastPick, setLastPick] = useState("尚未點擊");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const { pieces, turn: currentSide } = game;
@@ -177,27 +183,25 @@ export function GameView({
     setViewIndex(index >= total ? null : Math.max(0, index));
   };
 
-  // 鍵盤 ← → 前後翻
+  // 鍵盤 ← → 翻棋譜。棋譜由右往左排，所以 ← 是較新的一步、→ 是較早的一步
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // 在聊天輸入框裡按方向鍵是移動游標，不是翻棋譜
       if (e.target instanceof HTMLInputElement) return;
-      if (e.key === "ArrowLeft") goTo(shownIndex - 1);
-      else if (e.key === "ArrowRight") goTo(shownIndex + 1);
+      if (e.key === "ArrowLeft") goTo(shownIndex + 1);
+      else if (e.key === "ArrowRight") goTo(shownIndex - 1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  // 棋譜列表自動捲到正在看的那一步
+  // 棋譜自動捲到正在看的那一步
   const activeMoveRef = useRef<HTMLLIElement>(null);
   useEffect(() => {
-    activeMoveRef.current?.scrollIntoView({ block: "nearest" });
+    activeMoveRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [shownIndex]);
 
   const handlePick = (pos: Pos) => {
-    setLastPick(squareName(pos));
-
     // 回放中不能走棋
     if (reviewing) return;
 
@@ -222,18 +226,19 @@ export function GameView({
     }
   };
 
+
   // 一串座位名稱，各自用該方的顏色：「藍方（999）、黑方（電腦）」
   const sideList = (sides: Side[]) =>
     sides.map((side, i) => (
       <span key={side}>
         {i > 0 && "、"}
-        <span style={{ color: PANEL_COLORS[side].stroke }}>{seatName(side)}</span>
+        <span style={{ color: SIDE_INK[side] }}>{seatName(side)}</span>
       </span>
     ));
 
   const chatBoxProps = (partner: Side, corner: "left" | "right") => ({
     title: `與${seatName(partner)}密談`,
-    accent: PANEL_COLORS[partner].stroke,
+    accent: SIDE_INK[partner],
     corner,
     open: chatOpen(game, me, partner),
     closedHint: game.alive.includes(partner)
@@ -249,214 +254,210 @@ export function GameView({
         key: String(m.id),
         mine: m.from === me,
         name: seatName(m.from),
-        color: PANEL_COLORS[m.from].stroke,
+        color: SIDE_INK[m.from],
         text: m.text,
       })),
     onSend: (text: string) => onSendChat?.(partner, text),
   });
 
+  // 棋盤左右留給狀態和棋譜；手機寬度改成上面留給狀態、下面留給密談
+  const sideRoom = size.w >= 900 ? Math.min(270, Math.round((size.w - 760) / 2)) : 0;
+  const reserve =
+    size.w < 760
+      ? { left: 0, right: 0, top: Math.round(Math.min(430, size.h * 0.5)), bottom: 64 }
+      : { left: sideRoom, right: sideRoom, top: 12, bottom: 12 };
+
   return (
-    <div style={{ position: "relative" }}>
-      {/* 左上：狀態（不跟著棋盤縮放） */}
-      <div
-        style={{
-          position: "absolute",
-          top: 16,
-          left: 16,
-          zIndex: 1,
-          color: "#e5e7eb",
-          fontSize: 18,
-          pointerEvents: "none",
-        }}
-      >
-        <div
-          style={{
-            fontSize: 22,
-            fontWeight: "bold",
-            color: PANEL_COLORS[game.winner ?? currentSide ?? me].stroke,
-            marginBottom: 4,
-          }}
-        >
-          {game.winner
-            ? `${seatName(game.winner)}獲勝！`
-            : currentSide
-            ? `輪到：${seatName(currentSide)}${turnNote ? `・${turnNote}` : ""}`
-            : game.drawReason === "repetition"
-            ? "和局：局面重複"
-            : "和局：所有人都沒棋可走"}
-        </div>
-        {checked.length > 0 && !game.winner && (
-          <div style={{ color: "#f87171", fontWeight: "bold" }}>
-            將軍：{sideList(checked)}
-          </div>
-        )}
-        {game.skipped.length > 0 && (
-          <div style={{ color: "#fbbf24" }}>
-            {sideList(game.skipped)}無棋可走，跳過
-          </div>
-        )}
-        {game.alive.length < TURN_ORDER.length && (
-          <div style={{ opacity: 0.7 }}>
-            出局：{sideList(TURN_ORDER.filter((s) => !game.alive.includes(s)))}
-          </div>
-        )}
-        {game.celestial && (
-          <SkyStatus round={shownRound} sky={game.skyStart + shownRound} />
-        )}
-        {clock && (
-          <div
-            style={{
-              margin: "6px 0",
-              fontSize: 15,
-              fontVariantNumeric: "tabular-nums",
-            }}
-          >
-            {TURN_ORDER.map((side) => {
-              const left = timeLeft(clock, side, currentSide, now);
-              const active = side === currentSide;
-              const byoyomi = left.main <= 0;
-              return (
-                <div
-                  key={side}
-                  style={{
-                    display: "flex",
-                    gap: 6,
-                    fontWeight: active ? "bold" : undefined,
-                    opacity: !game.alive.includes(side) ? 0.4 : active ? 1 : 0.75,
-                  }}
-                >
-                  <span style={{ width: 14 }}>{active ? "▶" : ""}</span>
-                  <span style={{ color: PANEL_COLORS[side].stroke, minWidth: 130 }}>
-                    {seatName(side)}
-                  </span>
-                  <span
-                    style={{
-                      color: !byoyomi
-                        ? undefined
-                        : active && left.byoyomi <= CLOCK_WARN_MS
-                        ? "#f87171"
-                        : "#fbbf24",
-                    }}
-                  >
-                    {byoyomi
-                      ? `讀秒 ${formatTime(left.byoyomi)}`
-                      : formatTime(left.main)}
-                  </span>
-                </div>
-              );
-            })}
-            {clock.pausedAt !== null && (
-              <div style={{ fontSize: 13, opacity: 0.7 }}>回放中，計時暫停</div>
+    <div className="game">
+      <div className="game-board">
+        <Board
+          width={size.w}
+          height={size.h}
+          me={me}
+          pieces={shownPieces}
+          selectedId={selectedId}
+          targets={reviewing ? [] : targets}
+          shownMove={shownMove}
+          reserve={reserve}
+          onPick={handlePick}
+        />
+      </div>
+
+      {/* 左上：輪到誰、將軍、天象、時間、操作 */}
+      <aside className="game-status">
+        <TurnHeader game={game} seatName={seatName} turnNote={turnNote} />
+
+        {(checked.length > 0 || game.skipped.length > 0 || game.alive.length < TURN_ORDER.length) && (
+          <div className="alerts">
+            {checked.length > 0 && !game.winner && (
+              <p className="alert-check">將軍：{sideList(checked)}</p>
+            )}
+            {game.skipped.length > 0 && (
+              <p className="alert-quiet">{sideList(game.skipped)}無棋可走，跳過</p>
+            )}
+            {game.alive.length < TURN_ORDER.length && (
+              <p className="alert-quiet">
+                出局：{sideList(TURN_ORDER.filter((s) => !game.alive.includes(s)))}
+              </p>
             )}
           </div>
         )}
-        <div style={{ fontSize: 14, opacity: 0.7 }}>點選：{lastPick}</div>
-        {controls && (
-          <div style={{ marginTop: 8, pointerEvents: "auto", fontSize: 16 }}>
-            {controls}
-          </div>
-        )}
-      </div>
 
-      {/* 私聊：左下、右下分別是畫面上左右兩邊的對手 */}
+        {game.celestial && (
+          <>
+            <hr className="fold-rule" />
+            <SkyStatus round={shownRound} sky={game.skyStart + shownRound} />
+          </>
+        )}
+
+        {clock && (
+          <>
+            <hr className="fold-rule" />
+            <ul className="clocks">
+              {TURN_ORDER.map((side) => {
+                const left = timeLeft(clock, side, currentSide, now);
+                const active = side === currentSide;
+                const byoyomi = left.main <= 0;
+                const out = !game.alive.includes(side);
+                return (
+                  <li key={side} className={out ? "out" : active ? "active" : undefined}>
+                    <SideSeal side={side} />
+                    <span className="who">{seatName(side)}</span>
+                    <span
+                      className="time"
+                      style={
+                        byoyomi && active && left.byoyomi <= CLOCK_WARN_MS
+                          ? { color: "var(--vermilion)", fontWeight: 700 }
+                          : undefined
+                      }
+                    >
+                      {byoyomi ? `讀秒 ${formatTime(left.byoyomi)}` : formatTime(left.main)}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            {clock.pausedAt !== null && <p className="note">回放中，計時暫停</p>}
+          </>
+        )}
+
+        {controls && (
+          <>
+            <hr className="fold-rule" />
+            <div className="game-controls">{controls}</div>
+          </>
+        )}
+      </aside>
+
+      {/* 右上：直書棋譜。由右往左，最新的一步在最左邊 */}
+      <aside className="game-moves" aria-label="棋譜">
+        <header className="moves-head">
+          <span className="note">
+            {shownIndex === 0 ? "開局" : `第${chineseNumber(shownIndex)}步`}{"　"}共
+            {total === 0 ? "〇" : chineseNumber(total)}步
+          </span>
+          <h2>棋譜</h2>
+        </header>
+        <ol className="move-strip">
+          {total === 0 && <li className="empty">還沒走棋</li>}
+          {game.history.map((e, i) => (
+            <li
+              key={i}
+              ref={i + 1 === shownIndex ? activeMoveRef : undefined}
+              className={i + 1 === shownIndex ? "active" : undefined}
+              onClick={() => goTo(i + 1)}
+              title={moveSquares(e)}
+            >
+              <span className="num">{chineseNumber(i + 1)}</span>
+              <span className="who" style={{ color: SIDE_INK[e.mover] }}>
+                {PANEL_NAMES[e.mover]}
+              </span>
+              <span className="text">{describeMove(e)}</span>
+            </li>
+          ))}
+        </ol>
+        {/* 往左是較新的步，往右是較早的步（鍵盤 ← → 也一樣） */}
+        <nav className="move-nav">
+          <button onClick={() => goTo(total)} disabled={!reviewing} title="最新" aria-label="最新">
+            <NavIcon d="M3 3V17M17 3L6 10L17 17Z" />
+          </button>
+          <button onClick={() => goTo(shownIndex + 1)} disabled={!reviewing} title="下一步" aria-label="下一步">
+            <NavIcon d="M15 3L4 10L15 17Z" />
+          </button>
+          <button onClick={() => goTo(shownIndex - 1)} disabled={shownIndex === 0} title="上一步" aria-label="上一步">
+            <NavIcon d="M5 3L16 10L5 17Z" />
+          </button>
+          <button onClick={() => goTo(0)} disabled={shownIndex === 0} title="最初" aria-label="最初">
+            <NavIcon d="M3 3L14 10L3 17ZM17 3V17" />
+          </button>
+        </nav>
+        {reviewing && <p className="note">回放中，按最左邊的符號回到目前局面</p>}
+      </aside>
+
+      {/* 密談：左下、右下分別是畫面上左右兩邊的對手 */}
       {onSendChat && (
         <>
           <ChatBox {...chatBoxProps(leftOf(me), "left")} />
           <ChatBox {...chatBoxProps(rightOf(me), "right")} />
         </>
       )}
-
-      {/* 右上：棋譜 */}
-      <div
-        style={{
-          position: "absolute",
-          top: 16,
-          right: 16,
-          width: MOVE_LIST_WIDTH,
-          maxHeight: MOVE_LIST_MAX_HEIGHT,
-          zIndex: 1,
-          display: "flex",
-          flexDirection: "column",
-          background: "rgba(15, 23, 42, 0.9)",
-          border: "1px solid #334155",
-          borderRadius: 8,
-          color: "#e5e7eb",
-          fontSize: 13,
-        }}
-      >
-        <div style={{ padding: "8px 10px", borderBottom: "1px solid #334155" }}>
-          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-            <button onClick={() => goTo(0)} disabled={shownIndex === 0}>
-              ⏮
-            </button>
-            <button
-              onClick={() => goTo(shownIndex - 1)}
-              disabled={shownIndex === 0}
-            >
-              ◀
-            </button>
-            <span style={{ flex: 1, textAlign: "center" }}>
-              棋譜 {shownIndex} / {total}
-            </span>
-            <button onClick={() => goTo(shownIndex + 1)} disabled={!reviewing}>
-              ▶
-            </button>
-            <button onClick={() => goTo(total)} disabled={!reviewing}>
-              ⏭
-            </button>
-          </div>
-          {reviewing && (
-            <div style={{ marginTop: 4, color: "#fbbf24", fontSize: 12 }}>
-              回放中，按 ⏭ 回到目前局面
-            </div>
-          )}
-        </div>
-        <ol
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            margin: 0,
-            padding: "4px 0",
-            listStyle: "none",
-          }}
-        >
-          {game.history.map((e, i) => (
-            <li
-              key={i}
-              ref={i + 1 === shownIndex ? activeMoveRef : undefined}
-              onClick={() => goTo(i + 1)}
-              style={{
-                display: "flex",
-                gap: 6,
-                padding: "2px 10px",
-                cursor: "pointer",
-                background: i + 1 === shownIndex ? "#334155" : undefined,
-              }}
-            >
-              <span style={{ opacity: 0.5, minWidth: 26, textAlign: "right" }}>
-                {i + 1}.
-              </span>
-              <span
-                style={{ color: PANEL_COLORS[e.mover].stroke, fontWeight: "bold" }}
-              >
-                {PANEL_NAMES[e.mover]}
-              </span>
-              <span title={moveSquares(e)}>{describeMove(e)}</span>
-            </li>
-          ))}
-        </ol>
-      </div>
-
-      <Board
-        width={size.w}
-        height={size.h}
-        me={me}
-        pieces={shownPieces}
-        selectedId={selectedId}
-        targets={reviewing ? [] : targets}
-        shownMove={shownMove}
-        onPick={handlePick}
-      />
     </div>
+  );
+}
+
+// 各方的小方印（紅、黑、藍）
+function SideSeal({ side }: { side: Side }) {
+  return (
+    <span className="side-seal" style={{ background: SIDE_INK[side] }} aria-hidden>
+      {PANEL_NAMES[side]}
+    </span>
+  );
+}
+
+// 輪到誰／誰贏了／和局
+function TurnHeader({
+  game,
+  seatName,
+  turnNote,
+}: {
+  game: GameState;
+  seatName: (side: Side) => string;
+  turnNote: string;
+}) {
+  const side = game.winner ?? game.turn;
+  if (!side) {
+    return (
+      <div className="turn">
+        <div>
+          <p className="turn-main">和局</p>
+          <p className="turn-sub">
+            {game.drawReason === "repetition" ? "局面重複" : "所有人都沒棋可走"}
+          </p>
+        </div>
+      </div>
+    );
+  }
+  const short = `${PANEL_NAMES[side]}方`;
+  // 有玩家名字（例如「藍方（小明）」）或補充說明時才多寫一行
+  const name = seatName(side);
+  const sub = game.winner ? (name !== short ? name : "") : turnNote || (name !== short ? name : "");
+  return (
+    <div className="turn">
+      <SideSeal side={side} />
+      <div>
+        <p className="turn-main" style={game.winner ? { color: SIDE_INK[side] } : undefined}>
+          {game.winner ? `${short}獲勝` : short}
+        </p>
+        {sub && <p className="turn-sub">{sub}</p>}
+      </div>
+    </div>
+  );
+}
+
+function NavIcon({ d }: { d: string }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden>
+      <path d={d} fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+    </svg>
   );
 }
