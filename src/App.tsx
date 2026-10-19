@@ -1,11 +1,12 @@
-// 大廳：單機對電腦，或連線（建房、輸入房號加入、自動配對）
+// 進站流程：封面 → 大廳（單機、建房、加入、自動配對、我的棋譜）→ 對局
 
 import { useEffect, useState } from "react";
-import { type MeResponse, MAX_NAME_LENGTH, PLAN_NAMES } from "./protocol";
-import { fetchMe, loginUrl, logout, saveName, savedName, savedRoom } from "./net";
+import type { MeResponse } from "./protocol";
+import { fetchMe, logout, saveName, savedName, savedRoom } from "./net";
 import { LocalGame } from "./LocalGame";
-import { type OnlineAction, OnlineGame, Panel } from "./OnlineGame";
+import { type OnlineAction, OnlineGame } from "./OnlineGame";
 import { RecordsPage } from "./Records";
+import { Lobby } from "./Lobby";
 
 type Mode =
   | { kind: "menu" }
@@ -26,7 +27,25 @@ const LOGIN_NOTICES: Record<string, string> = {
 const loginNotice = () =>
   LOGIN_NOTICES[new URLSearchParams(location.search).get("login") ?? ""] ?? null;
 
+// 封面翻開過就記在這個分頁裡，登入回來或重新整理不用再翻一次
+const COVER_KEY = "tkc.coverOpened";
+const coverOpened = () => {
+  try {
+    return sessionStorage.getItem(COVER_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+const rememberCoverOpened = () => {
+  try {
+    sessionStorage.setItem(COVER_KEY, "1");
+  } catch {
+    // 存不了就算了，只是下次要再翻一次封面
+  }
+};
+
 export default function App() {
+  const [opened, setOpened] = useState(coverOpened);
   const [name, setName] = useState(savedName);
   const [code, setCode] = useState(inviteCode);
   const [notice, setNotice] = useState<string | null>(loginNotice);
@@ -93,118 +112,39 @@ export default function App() {
     setMode({ kind: "online", action });
   };
 
-  const row = { display: "flex", gap: 8, marginTop: 12 } as const;
-
   return (
-    <Panel>
-      <h1 style={{ margin: "0 0 16px", textAlign: "center" }}>三國象棋</h1>
-
-      {me?.account ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-          {me.account.avatarUrl && (
-            <img
-              src={me.account.avatarUrl}
-              alt=""
-              width={32}
-              height={32}
-              referrerPolicy="no-referrer"
-              style={{ borderRadius: "50%" }}
-            />
-          )}
-          <span style={{ flex: 1, minWidth: 0 }}>
-            已登入：{me.account.name}
-            {me.account.subscription && (
-              <span style={{ marginLeft: 6, fontSize: 12, color: "#facc15" }}>
-                {PLAN_NAMES[me.account.subscription.plan]}
-              </span>
-            )}
-          </span>
-          <button onClick={() => setMode({ kind: "records" })}>我的棋譜</button>
-          <button
-            onClick={async () => {
-              if (await logout()) setMe({ ...me, account: null });
-              else setNotice("登出失敗，請再試一次");
-            }}
-          >
-            登出
-          </button>
-        </div>
-      ) : (
-        me?.providers.includes("google") && (
-          <div style={{ marginBottom: 16 }}>
-            <a
-              href={loginUrl("google")}
-              style={{
-                display: "block",
-                padding: "8px 12px",
-                borderRadius: 6,
-                background: "#fff",
-                color: "#1f1f1f",
-                textAlign: "center",
-                textDecoration: "none",
-                fontWeight: 600,
-              }}
-            >
-              使用 Google 帳號登入
-            </a>
-            <p style={{ margin: "6px 0 0", fontSize: 13, color: "#94a3b8" }}>
-              不登入也能玩；登入後換電腦也是同一個帳號
-            </p>
-          </div>
-        )
-      )}
-
-      <label style={{ display: "block", marginBottom: 4 }}>暱稱</label>
-      <input
-        value={name}
-        maxLength={MAX_NAME_LENGTH}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="連線時顯示給其他玩家"
-        style={{ width: "100%", boxSizing: "border-box" }}
-      />
-
-      {notice && <p style={{ color: "#fbbf24", margin: "12px 0 0" }}>{notice}</p>}
-
-      <div style={row}>
-        <button style={{ flex: 1 }} onClick={() => goOnline({ type: "create" })}>
-          建立房間
-        </button>
-        <button style={{ flex: 1 }} onClick={() => goOnline({ type: "match" })}>
-          自動配對
-        </button>
-      </div>
-
-      <div style={row}>
-        <input
-          value={code}
-          onChange={(e) => setCode(e.target.value.toUpperCase())}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && code.trim()) {
-              goOnline({ type: "join", code: code.trim() });
-            }
-          }}
-          placeholder="輸入房號"
-          style={{ flex: 1, minWidth: 0, letterSpacing: 2 }}
-        />
-        <button
-          disabled={!code.trim()}
-          onClick={() => goOnline({ type: "join", code: code.trim() })}
-        >
-          加入房間
-        </button>
-      </div>
-
-      <hr style={{ borderColor: "#334155", margin: "20px 0" }} />
-
-      <button
-        style={{ width: "100%" }}
-        onClick={() => {
-          setNotice(null);
-          setMode({ kind: "local" });
-        }}
-      >
-        單機遊玩（對電腦）
-      </button>
-    </Panel>
+    <Lobby
+      me={me}
+      name={name}
+      onNameChange={setName}
+      code={code}
+      onCodeChange={setCode}
+      notice={notice}
+      opened={opened}
+      onOpen={() => {
+        rememberCoverOpened();
+        setOpened(true);
+      }}
+      onCreate={() => goOnline({ type: "create" })}
+      onMatch={() => goOnline({ type: "match" })}
+      onJoin={(focusCode) => {
+        if (!code.trim()) {
+          setNotice("先輸入朋友給的房號");
+          focusCode();
+          return;
+        }
+        goOnline({ type: "join", code: code.trim() });
+      }}
+      onLocal={() => {
+        setNotice(null);
+        setMode({ kind: "local" });
+      }}
+      onRecords={() => setMode({ kind: "records" })}
+      onLogout={async () => {
+        if (!me) return;
+        if (await logout()) setMe({ ...me, account: null });
+        else setNotice("登出失敗，請再試一次");
+      }}
+    />
   );
 }
