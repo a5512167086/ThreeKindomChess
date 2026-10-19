@@ -11,6 +11,8 @@
 //   y 5..9 是河對岸：f 0..4 屬於 low 鄰居，f 4..8 屬於 high 鄰居，
 //   對岸的 col = 8 - f、row = y - 5。
 
+import type { Phase } from "./sky";
+
 export type Side = "Center" | "Left" | "Right";
 
 export type Kind =
@@ -86,7 +88,9 @@ const HORSE: [number, number][] = [
   [-2, -1],
 ];
 
-const inPalace = (f: number, y: number) => f >= 3 && f <= 5 && y >= 0 && y <= 2;
+// 九宮：每片面板 C~E 排、4~6 路
+const inPalace = (p: Pos, panel: Side) =>
+  p.panel === panel && p.row >= 2 && p.col >= 3 && p.col <= 5;
 
 // 初始擺法：每片面板 E 排車馬相士將士相馬車、C 排炮、B 排兵
 export function initialPieces(): Piece[] {
@@ -126,7 +130,12 @@ export function initialPieces(): Piece[] {
 export const middleSoldierId = (side: Side) => `${side}-soldier-1-4`;
 
 // 一顆棋子照走法能到的落點（不考慮送將，送將檢查在 game.ts）
-export function pieceMoves(pieces: Piece[], piece: Piece): Pos[] {
+// phase：這顆棋子走的那一輪所在的四象；null = 不用星象（古典規則）
+export function pieceMoves(
+  pieces: Piece[],
+  piece: Piece,
+  phase: Phase | null
+): Pos[] {
   const board = new Map(pieces.map((p) => [posKey(p.pos), p]));
   const { panel, row, col } = piece.pos;
   const f0 = col;
@@ -143,71 +152,90 @@ export function pieceMoves(pieces: Piece[], piece: Piece): Pos[] {
 
     switch (piece.kind) {
       case "chariot":
-      case "cannon":
         for (const [df, dy] of ORTHOGONAL) {
-          let jumped = false;
           for (let k = 1; ; k++) {
             const p = at(f0 + df * k, y0 + dy * k);
             if (!p) break;
-            const occ = occupant(p);
-            if (piece.kind === "chariot") {
-              if (canLand(p)) add(p);
-              if (occ) break;
-            } else if (!jumped) {
-              if (occ) jumped = true;
-              else add(p);
-            } else if (occ) {
-              if (occ.owner !== piece.owner) add(p);
-              break;
-            }
+            if (canLand(p)) add(p);
+            if (occupant(p)) break;
           }
         }
         break;
 
+      case "cannon": {
+        // 隔一子（朱雀時要隔兩子）才能吃；沒隔子時只能走空格
+        const screensNeeded = phase === "bird" ? 2 : 1;
+        for (const [df, dy] of ORTHOGONAL) {
+          let screens = 0;
+          for (let k = 1; ; k++) {
+            const p = at(f0 + df * k, y0 + dy * k);
+            if (!p) break;
+            if (!occupant(p)) {
+              if (screens === 0) add(p);
+              continue;
+            }
+            if (screens === screensNeeded) {
+              if (canLand(p)) add(p);
+              break;
+            }
+            screens++;
+          }
+        }
+        break;
+      }
+
       case "horse":
+        // 青龍時馬腿被擋住也能跳
         for (const [df, dy] of HORSE) {
           const leg =
             Math.abs(dy) === 2
               ? at(f0, y0 + Math.sign(dy))
               : at(f0 + Math.sign(df), y0);
           const p = at(f0 + df, y0 + dy);
-          if (leg && !occupant(leg) && p && canLand(p)) add(p);
+          const blocked = phase !== "dragon" && (!leg || occupant(leg));
+          if (!blocked && p && canLand(p)) add(p);
         }
         break;
 
       case "elephant":
-        // 只能在自己這半走田字，象眼被塞住不能走
+        // 走田字，象眼被塞住不能走；玄武時可過河，其他時候只能待在所在的面板
         for (const [df, dy] of DIAGONAL) {
-          const y = y0 + dy * 2;
-          if (y > 4) continue;
           const eye = at(f0 + df, y0 + dy);
-          const p = at(f0 + df * 2, y);
-          if (eye && !occupant(eye) && p && canLand(p)) add(p);
+          const p = at(f0 + df * 2, y0 + dy * 2);
+          if (!eye || occupant(eye) || !p || !canLand(p)) continue;
+          if (phase === "tortoise" || p.panel === panel) add(p);
         }
         break;
 
       case "advisor":
-      case "general":
+      case "general": {
+        // 只能在原本主人的九宮裡走。降士（主人出局後被接收的士）
+        // 在玄武時可以出宮；出了宮之後就一直能在宮外斜走一格（也能過河）
+        const free =
+          piece.kind === "advisor" &&
+          piece.owner !== piece.origin &&
+          (phase === "tortoise" || !inPalace(piece.pos, piece.origin));
         for (const [df, dy] of piece.kind === "advisor" ? DIAGONAL : ORTHOGONAL) {
-          const f = f0 + df;
-          const y = y0 + dy;
-          if (!inPalace(f, y)) continue;
-          const p = at(f, y);
-          if (p && canLand(p)) add(p);
+          const p = at(f0 + df, y0 + dy);
+          if (!p || !canLand(p)) continue;
+          if (free || inPalace(p, piece.origin)) add(p);
         }
         break;
+      }
 
       case "soldier": {
-        // 在原本主人的面板：只能往河的方向（y+1）；
+        // 在原本主人的面板：只能往河的方向（y+1），白虎時也能橫走；
         // 過河到別人面板：往那片面板的底線走（y-1），也能橫走。
         // 被接收的兵換了主人，走法仍依原本的主人判斷
         const crossed = panel !== piece.origin;
+        const sideways: [number, number][] = [
+          [1, 0],
+          [-1, 0],
+        ];
         const steps: [number, number][] = crossed
-          ? [
-              [0, -1],
-              [1, 0],
-              [-1, 0],
-            ]
+          ? [[0, -1], ...sideways]
+          : phase === "tiger"
+          ? [[0, 1], ...sideways]
           : [[0, 1]];
         for (const [df, dy] of steps) {
           const p = at(f0 + df, y0 + dy);

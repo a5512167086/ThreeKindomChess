@@ -5,7 +5,21 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { Pos, Side } from "./rules";
 import { samePos } from "./rules";
-import { type GameState, TURN_ORDER, chatOpen, inCheck, legalMoves } from "./game";
+import {
+  type GameState,
+  TURN_ORDER,
+  chatOpen,
+  inCheck,
+  legalMoves,
+  phaseOf,
+} from "./game";
+import {
+  PHASE_INFO,
+  mansionAt,
+  nextPhase,
+  phaseAt,
+  roundsLeftInPhase,
+} from "./sky";
 import type { ChatMessage } from "./protocol";
 import { ChatBox } from "./ChatBox";
 import { KIND_LABELS, moveNotation } from "./notation";
@@ -50,6 +64,27 @@ const leftOf = (side: Side) =>
 
 // 讀秒剩這麼少時轉紅色
 const CLOCK_WARN_MS = 10_000;
+
+// 天象：目前的宿與四象效果，以及還剩幾輪換到下一個四象
+function SkyStatus({ round }: { round: number }) {
+  const phase = phaseAt(round);
+  const info = PHASE_INFO[phase];
+  const next = PHASE_INFO[nextPhase(phase)];
+  return (
+    <div style={{ margin: "6px 0", fontSize: 15 }}>
+      <div>
+        天象：{mansionAt(round)}宿・第 {round + 1} 輪
+      </div>
+      <div style={{ color: info.color, fontWeight: "bold" }}>
+        {info.name}：{info.effect}
+      </div>
+      <div style={{ fontSize: 13, opacity: 0.7 }}>
+        再 {roundsLeftInPhase(round)} 輪後轉入
+        <span style={{ color: next.color }}>{next.name}</span>（{next.effect}）
+      </div>
+    </div>
+  );
+}
 
 // 時鐘走動時每 250ms 更新一次畫面
 function useNow(active: boolean): number {
@@ -110,7 +145,8 @@ export function GameView({
     [game, selected, canPlay]
   );
   const checked = useMemo(
-    () => game.alive.filter((side) => inCheck(game.pieces, side)),
+    () =>
+      game.alive.filter((side) => inCheck(game.pieces, side, phaseOf(game))),
     [game]
   );
   const now = useNow(!!clock && currentSide !== null && clock.pausedAt === null);
@@ -124,6 +160,8 @@ export function GameView({
   const shownPieces = shownMove
     ? shownMove.after
     : game.history[0]?.before ?? game.pieces;
+  // 正在看的局面之後下一步所在的輪
+  const shownRound = reviewing ? game.history[shownIndex].round : game.round;
 
   useEffect(() => {
     onReviewingChange?.(reviewing);
@@ -257,6 +295,7 @@ export function GameView({
             出局：{sideList(TURN_ORDER.filter((s) => !game.alive.includes(s)))}
           </div>
         )}
+        {game.celestial && <SkyStatus round={shownRound} />}
         {clock && (
           <div
             style={{

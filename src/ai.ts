@@ -4,7 +4,7 @@
 // 只看一步，不做深度搜尋；加一點隨機避免每盤都一樣、也減少重複局面
 
 import { type Kind, type Piece, type Pos, type Side, applyMove, pieceMoves, samePos } from "./rules";
-import { type GameState, inCheck, legalMoves, play } from "./game";
+import { type GameState, type PhaseOf, inCheck, legalMoves, phaseOf, play } from "./game";
 
 const VALUE: Record<Kind, number> = {
   general: 0, // 將的價值由勝負與吃將接收棋子體現
@@ -30,11 +30,11 @@ const material = (pieces: Piece[], side: Side) =>
     .reduce((sum, p) => sum + pieceValue(p), 0);
 
 // side 的子裡，被對手吃掉會損失最多的那一顆的損失
-function worstThreat(pieces: Piece[], side: Side): number {
+function worstThreat(pieces: Piece[], side: Side, phases: PhaseOf): number {
   let worst = 0;
   for (const attacker of pieces) {
     if (attacker.owner === side) continue;
-    for (const to of pieceMoves(pieces, attacker)) {
+    for (const to of pieceMoves(pieces, attacker, phases(attacker.owner))) {
       const target = pieces.find((p) => samePos(p.pos, to));
       if (!target || target.owner !== side || target.kind === "general") {
         continue;
@@ -44,7 +44,7 @@ function worstThreat(pieces: Piece[], side: Side): number {
       const recapture = after.some(
         (p) =>
           p.owner === side &&
-          pieceMoves(after, p).some((t) => samePos(t, to))
+          pieceMoves(after, p, phases(p.owner)).some((t) => samePos(t, to))
       );
       const loss = recapture
         ? Math.max(0, pieceValue(target) - pieceValue(attacker))
@@ -59,13 +59,14 @@ function evaluate(state: GameState, side: Side): number {
   if (state.winner === side) return Infinity;
   if (!state.alive.includes(side)) return -Infinity;
 
+  const phases = phaseOf(state);
   const opponents = state.alive.filter((s) => s !== side);
-  const givesCheck = opponents.some((s) => inCheck(state.pieces, s));
+  const givesCheck = opponents.some((s) => inCheck(state.pieces, s, phases));
   return (
     material(state.pieces, side) -
     OPPONENT_WEIGHT *
       opponents.reduce((sum, s) => sum + material(state.pieces, s), 0) -
-    worstThreat(state.pieces, side) +
+    worstThreat(state.pieces, side, phases) +
     (givesCheck ? CHECK_BONUS : 0)
   );
 }

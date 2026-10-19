@@ -25,8 +25,8 @@ const ME: Side = "Center";
 // 棋局與時鐘一起更新，走一步時同時扣時間
 type Match = { game: GameState; clock: Clock };
 
-const startMatch = (): Match => ({
-  game: newGame(),
+const startMatch = (celestial: boolean): Match => ({
+  game: newGame({ celestial }),
   clock: newClock(Date.now()),
 });
 
@@ -39,7 +39,9 @@ function applyMove(m: Match, pieceId: string, to: Pos, now: number): Match {
 }
 
 export function LocalGame({ onExit }: { onExit: () => void }) {
-  const [match, setMatch] = useState(startMatch);
+  // 星象規則：改了之後按重新開始才生效
+  const [celestial, setCelestial] = useState(true);
+  const [match, setMatch] = useState(() => startMatch(true));
   const { game, clock } = match;
   const [round, setRound] = useState(0); // 重新開始時換掉 GameView，清空選取與回放
   const [chats, setChats] = useState<ChatMessage[]>([]);
@@ -90,7 +92,7 @@ export function LocalGame({ onExit }: { onExit: () => void }) {
     );
 
   const restart = () => {
-    setMatch(startMatch());
+    setMatch(startMatch(celestial));
     setChats([]);
     setRound((r) => r + 1);
   };
@@ -128,6 +130,19 @@ export function LocalGame({ onExit }: { onExit: () => void }) {
                 {sideName(side)}
               </label>
             ))}
+          </div>
+          <div>
+            <label style={{ cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={celestial}
+                onChange={() => setCelestial((c) => !c)}
+              />
+              星象規則
+            </label>
+            {celestial !== game.celestial && (
+              <span style={{ fontSize: 13, opacity: 0.7 }}>（重新開始後生效）</span>
+            )}
           </div>
           <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
             <button onClick={restart}>重新開始</button>

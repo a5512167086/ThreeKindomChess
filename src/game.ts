@@ -6,6 +6,7 @@
 // - 場上只剩一家就贏；所有人都沒棋可走則和局
 // - 長將、長捉（長打）：同一局面第 3 次出現時，循環中每步都在將軍或捉子的人
 //   不能再走出這個局面（必須變著）；沒人長打或所有人都長打則判和
+// - 星象（sky.ts）：每一輪推進一宿，每一家都用「自己那一輪」的四象走棋
 
 import {
   type Piece,
@@ -18,6 +19,7 @@ import {
   posKey,
   samePos,
 } from "./rules";
+import { type Phase, phaseAt } from "./sky";
 
 // 輪流順序（畫面上逆時針：下 → 右上 → 左上）
 export const TURN_ORDER: Side[] = ["Center", "Right", "Left"];
@@ -32,6 +34,7 @@ type HistoryEntry = {
   before: Piece[];
   after: Piece[];
   alive: Side[]; // 走這步之前還在場上的玩家
+  round: number; // 這步是在第幾輪走的
   key: string; // 走完後的局面
 };
 
@@ -42,18 +45,22 @@ export type GameState = {
   winner: Side | null;
   drawReason: "noMoves" | "repetition" | null; // 和局原因
   skipped: Side[]; // 上一步之後因為無棋可走被跳過的玩家
+  celestial: boolean; // 有沒有星象；false = 古典規則
+  round: number; // 第幾輪（0 起算）：輪流順序繞回第一家時 +1
   startKey: string; // 開局局面
   history: HistoryEntry[];
 };
 
-// 局面識別：所有棋子（主人、原主人、種類、位置）＋ 剛走完的人
-const positionKey = (pieces: Piece[], mover: Side) =>
+// 局面識別：所有棋子（主人、原主人、種類、位置）＋ 剛走完的人 ＋ 當時的四象
+const positionKey = (pieces: Piece[], mover: Side, phase: Phase | null) =>
   pieces
     .map((p) => `${p.owner}/${p.origin}/${p.kind}/${posKey(p.pos)}`)
     .sort()
-    .join("|") + `#${mover}`;
+    .join("|") + `#${mover}${phase ? `@${phase}` : ""}`;
 
-export function newGame(): GameState {
+export function newGame({
+  celestial = true,
+}: { celestial?: boolean } = {}): GameState {
   const pieces = initialPieces();
   return {
     pieces,
@@ -62,19 +69,47 @@ export function newGame(): GameState {
     winner: null,
     drawReason: null,
     skipped: [],
-    startKey: positionKey(pieces, TURN_ORDER[TURN_ORDER.length - 1]),
+    celestial,
+    round: 0,
+    startKey: positionKey(
+      pieces,
+      TURN_ORDER[TURN_ORDER.length - 1],
+      celestial ? phaseAt(0) : null
+    ),
     history: [],
   };
 }
 
-const attacks = (pieces: Piece[], attacker: Piece, target: Pos) =>
-  pieceMoves(pieces, attacker).some((t) => samePos(t, target));
+// 每一家下一次走棋時的四象（null = 古典規則）
+export type PhaseOf = (side: Side) => Phase | null;
 
-// 某一方的將是否會被其他玩家吃到
-export function inCheck(pieces: Piece[], side: Side): boolean {
+// 輪到 ref 時：輪流順序在 ref 之後（含 ref）的還在這一輪，在前面的要等到下一輪
+const phasesFrom =
+  (celestial: boolean, round: number, ref: Side | null): PhaseOf =>
+  (side) => {
+    if (!celestial) return null;
+    const sameRound =
+      !ref || TURN_ORDER.indexOf(side) >= TURN_ORDER.indexOf(ref);
+    return phaseAt(sameRound ? round : round + 1);
+  };
+
+export const phaseOf = (state: GameState): PhaseOf =>
+  phasesFrom(state.celestial, state.round, state.turn);
+
+const attacks = (
+  pieces: Piece[],
+  attacker: Piece,
+  target: Pos,
+  phase: Phase | null
+) => pieceMoves(pieces, attacker, phase).some((t) => samePos(t, target));
+
+// 某一方的將是否會被其他玩家吃到（各家用自己下一次走棋時的四象）
+export function inCheck(pieces: Piece[], side: Side, phases: PhaseOf): boolean {
   const general = pieces.find((p) => p.owner === side && p.kind === "general");
   if (!general) return false;
-  return pieces.some((p) => p.owner !== side && attacks(pieces, p, general.pos));
+  return pieces.some(
+    (p) => p.owner !== side && attacks(pieces, p, general.pos, phases(p.owner))
+  );
 }
 
 // 走一步並處理吃將：被吃將的一方出局，剩下的棋子全部歸吃將的人
@@ -98,33 +133,46 @@ function resolveMove(
 }
 
 // 走完不會讓自己的將被吃的落點
-function safeMoves(pieces: Piece[], alive: Side[], piece: Piece): Pos[] {
-  return pieceMoves(pieces, piece).filter(
-    (to) => !inCheck(resolveMove(pieces, alive, piece, to).pieces, piece.owner)
+function safeMoves(
+  pieces: Piece[],
+  alive: Side[],
+  piece: Piece,
+  phases: PhaseOf
+): Pos[] {
+  return pieceMoves(pieces, piece, phases(piece.owner)).filter(
+    (to) =>
+      !inCheck(resolveMove(pieces, alive, piece, to).pieces, piece.owner, phases)
   );
 }
 
 // ---- 長將、長捉 ----
 
 // side 是否正在將軍任何一家
-const givesCheck = (pieces: Piece[], side: Side) =>
+const givesCheck = (pieces: Piece[], side: Side, phases: PhaseOf) =>
   pieces.some(
     (g) =>
       g.kind === "general" &&
       g.owner !== side &&
-      pieces.some((p) => p.owner === side && attacks(pieces, p, g.pos))
+      pieces.some(
+        (p) => p.owner === side && attacks(pieces, p, g.pos, phases(side))
+      )
   );
 
 // side 目前「捉」住的子，回傳「攻擊者>目標」的集合。
 // 捉：能合法吃掉、且目標的主人吃不回來（馬、炮捉車則有保護也算）。
 // 將、兵捉子不算捉；捉沒過河的兵不算捉；吃將是將軍不是捉。
-function chasePairs(pieces: Piece[], alive: Side[], side: Side): Set<string> {
+function chasePairs(
+  pieces: Piece[],
+  alive: Side[],
+  side: Side,
+  phases: PhaseOf
+): Set<string> {
   const result = new Set<string>();
   for (const p of pieces) {
     if (p.owner !== side || p.kind === "general" || p.kind === "soldier") {
       continue;
     }
-    for (const to of safeMoves(pieces, alive, p)) {
+    for (const to of safeMoves(pieces, alive, p, phases)) {
       const target = pieces.find((q) => samePos(q.pos, to));
       if (!target || target.kind === "general") continue;
       if (target.kind === "soldier" && target.pos.panel === target.origin) {
@@ -135,7 +183,8 @@ function chasePairs(pieces: Piece[], alive: Side[], side: Side): Set<string> {
       if (!biggerTarget) {
         const after = applyMove(pieces, p.id, to);
         const protectedTarget = after.some(
-          (q) => q.owner === target.owner && attacks(after, q, to)
+          (q) =>
+            q.owner === target.owner && attacks(after, q, to, phases(q.owner))
         );
         if (protectedTarget) continue;
       }
@@ -147,13 +196,16 @@ function chasePairs(pieces: Piece[], alive: Side[], side: Side): Set<string> {
 
 // 這一步是不是「打」（將軍或新產生的捉）
 const attackMoveCache = new WeakMap<HistoryEntry, boolean>();
-function isAttackMove(e: HistoryEntry): boolean {
+function isAttackMove(e: HistoryEntry, celestial: boolean): boolean {
   let result = attackMoveCache.get(e);
   if (result === undefined) {
-    const before = chasePairs(e.before, e.alive, e.mover);
+    const phases = phasesFrom(celestial, e.round, e.mover);
+    const before = chasePairs(e.before, e.alive, e.mover, phases);
     result =
-      givesCheck(e.after, e.mover) ||
-      [...chasePairs(e.after, e.alive, e.mover)].some((c) => !before.has(c));
+      givesCheck(e.after, e.mover, phases) ||
+      [...chasePairs(e.after, e.alive, e.mover, phases)].some(
+        (c) => !before.has(c)
+      );
     attackMoveCache.set(e, result);
   }
   return result;
@@ -178,7 +230,9 @@ function judgeRepetition(
   ];
   const movers = [...new Set(cycle.map((e) => e.mover))];
   const violators = movers.filter((side) =>
-    cycle.filter((e) => e.mover === side).every(isAttackMove)
+    cycle
+      .filter((e) => e.mover === side)
+      .every((e) => isAttackMove(e, state.celestial))
   );
 
   if (violators.includes(entry.mover) && violators.length < movers.length) {
@@ -199,14 +253,19 @@ function makeEntry(state: GameState, piece: Piece, to: Pos) {
     before: state.pieces,
     after: next.pieces,
     alive: state.alive,
-    key: positionKey(next.pieces, piece.owner),
+    round: state.round,
+    key: positionKey(
+      next.pieces,
+      piece.owner,
+      state.celestial ? phaseAt(state.round) : null
+    ),
   };
   return { next, entry };
 }
 
 // 不管輪到誰，這顆棋子在目前局面能走的位置
 function movesFor(state: GameState, piece: Piece): Pos[] {
-  return safeMoves(state.pieces, state.alive, piece).filter(
+  return safeMoves(state.pieces, state.alive, piece, phaseOf(state)).filter(
     (to) => judgeRepetition(state, makeEntry(state, piece, to).entry) !== "forbidden"
   );
 }
@@ -256,12 +315,16 @@ export function play(state: GameState, pieceId: string, to: Pos): GameState {
     return { ...base, turn: null, drawReason: "repetition" };
   }
 
-  // 找下一個有棋可走的玩家（最後才輪回自己）；都沒有就和局
+  // 找下一個有棋可走的玩家（最後才輪回自己）；都沒有就和局。
+  // 繞過輪流順序的最後一家就進入下一輪，每一家都用自己那一輪的四象判斷
   const skipped: Side[] = [];
+  const n = next.alive.length;
   const start = next.alive.indexOf(piece.owner);
-  for (let i = 1; i <= next.alive.length; i++) {
-    const side = next.alive[(start + i) % next.alive.length];
-    if (hasAnyMove(base, side)) return { ...base, turn: side, skipped };
+  for (let i = 1; i <= n; i++) {
+    const side = next.alive[(start + i) % n];
+    const round = state.round + (start + i >= n ? 1 : 0);
+    const candidate: GameState = { ...base, turn: side, round, skipped };
+    if (hasAnyMove(candidate, side)) return candidate;
     skipped.push(side);
   }
   return { ...base, turn: null, drawReason: "noMoves", skipped };
