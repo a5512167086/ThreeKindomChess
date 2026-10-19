@@ -214,15 +214,19 @@
   align-items: flex-end;
   gap: 12px;
 }
+/* 標題一行、步數一行，都靠右而且不換行：步數變長只會往左長，標題不會被擠動 */
 .moves-head {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  white-space: nowrap;
 }
 .moves-head h2 {
   font-family: var(--kai);
   font-weight: 700;
   font-size: 22px;
+  line-height: 1.2;
 }
 .move-strip {
   list-style: none;
@@ -483,6 +487,11 @@
   }
   .game-moves {
     max-width: calc(38vw - 12px);
+  }
+  /* 手機上步數可以換行（標題在上面一行，不會被擠動） */
+  .moves-head .note {
+    white-space: normal;
+    text-align: right;
   }
   .move-strip {
     max-width: calc(38vw - 12px);

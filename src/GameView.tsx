@@ -352,11 +352,11 @@ export function GameView({
       {/* 右上：直書棋譜。由右往左，最新的一步在最左邊 */}
       <aside className="game-moves" aria-label="棋譜">
         <header className="moves-head">
+          <h2>棋譜</h2>
           <span className="note">
             {shownIndex === 0 ? "開局" : `第${chineseNumber(shownIndex)}步`}{"　"}共
             {total === 0 ? "〇" : chineseNumber(total)}步
           </span>
-          <h2>棋譜</h2>
         </header>
         <ol className="move-strip">
           {total === 0 && <li className="empty">還沒走棋</li>}
