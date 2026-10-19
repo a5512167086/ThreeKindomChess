@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Pos, Side } from "./rules";
 import { type GameState, TURN_ORDER, newGame, play } from "./game";
 import { chooseMove } from "./ai";
+import { randomSkyStart } from "./sky";
 import {
   type Clock,
   afterMove,
@@ -26,7 +27,7 @@ const ME: Side = "Center";
 type Match = { game: GameState; clock: Clock };
 
 const startMatch = (celestial: boolean): Match => ({
-  game: newGame({ celestial }),
+  game: newGame({ celestial, skyStart: randomSkyStart() }),
   clock: newClock(Date.now()),
 });
 

@@ -11,7 +11,8 @@ import { openDb } from "./db";
 import { type Account, accountFromCookie, createAuthHandler, renameAccount } from "./auth";
 import { createApiHandler } from "./api";
 import { saveGame } from "./records";
-import { type GameState, TURN_ORDER, chatOpen, newGame, play } from "../src/game";
+import { type GameSetup, type GameState, TURN_ORDER, chatOpen, newGame, play } from "../src/game";
+import { randomSkyStart } from "../src/sky";
 import { chooseMove } from "../src/ai";
 import {
   type Clock,
@@ -232,7 +233,7 @@ function syncPlayer(room: Room, playerId: string) {
   socket.join(room.code);
   socket.emit("room:state", roomView(room));
   if (room.game) {
-    socket.emit("game:sync", room.moves, clockView(room));
+    socket.emit("game:sync", room.moves, clockView(room), setupOf(room.game));
     socket.emit("chat:sync", visibleChats(room, seatOf(room, playerId)));
   }
 }
@@ -342,7 +343,7 @@ function startGame(room: Room) {
     })
   ) as Record<Side, RosterSeat>;
   room.startedAt = new Date();
-  room.game = newGame();
+  room.game = newGame({ skyStart: randomSkyStart() });
   room.moves = [];
   room.chats = [];
   room.clock = newClock(Date.now());
@@ -350,7 +351,7 @@ function startGame(room: Room) {
   room.round += 1;
 
   broadcastRoom(room);
-  io.to(room.code).emit("game:sync", [], clockView(room));
+  io.to(room.code).emit("game:sync", [], clockView(room), setupOf(room.game));
   io.to(room.code).emit("chat:sync", []);
   scheduleAi(room);
   scheduleTimeout(room);
@@ -389,6 +390,7 @@ function saveRecord(room: Room) {
   });
   saveGame(db, {
     celestial: game.celestial,
+    skyStart: game.skyStart,
     moves: [...room.moves],
     seats: Object.fromEntries(
       TURN_ORDER.map((side): [Side, RecordSeat] => {
@@ -403,6 +405,12 @@ function saveRecord(room: Room) {
     finishedAt: new Date(),
   }).catch((err) => console.error(`房間 ${room.code} 的棋譜存檔失敗`, err));
 }
+
+// 客戶端重播要用的開局設定
+const setupOf = (game: GameState): GameSetup => ({
+  celestial: game.celestial,
+  skyStart: game.skyStart,
+});
 
 const clockView = (room: Room) =>
   toClockView(room.clock ?? newClock(Date.now()), Date.now());
@@ -603,7 +611,7 @@ io.on("connection", (socket: GameSocket) => {
 
   socket.on("game:resync", () => {
     const room = myRoom();
-    if (room?.game) socket.emit("game:sync", room.moves, clockView(room));
+    if (room?.game) socket.emit("game:sync", room.moves, clockView(room), setupOf(room.game));
   });
 
   socket.on("chat:send", (to, rawText, ack) => {

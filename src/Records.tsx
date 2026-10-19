@@ -227,7 +227,7 @@ function SubscriptionBox({
 // 重播一局：棋盤轉成自己的視角，用右上的棋譜或 ← → 一步一步看
 function ReplayView({ record, onBack }: { record: GameRecord; onBack: () => void }) {
   const game = useMemo(
-    () => replay(record.moves, { celestial: record.celestial }),
+    () => replay(record.moves, { celestial: record.celestial, skyStart: record.skyStart }),
     [record]
   );
   const seatName = (side: Side) => {
@@ -247,6 +247,7 @@ function ReplayView({ record, onBack }: { record: GameRecord; onBack: () => void
       turnNote=""
       seatName={seatName}
       onMove={() => {}}
+      startAtOpening
       controls={
         <div style={{ marginTop: 8 }}>
           <div style={{ fontSize: 13, color: "#94a3b8" }}>

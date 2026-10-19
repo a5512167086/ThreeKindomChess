@@ -5,6 +5,7 @@
 
 import type { Pos, Side } from "./rules";
 import type { ClockView } from "./clock";
+import type { GameSetup } from "./game";
 
 export const ROOM_SIZE = 3;
 export const MAX_NAME_LENGTH = 12;
@@ -50,8 +51,8 @@ export interface ServerToClientEvents {
   "session:me": (playerId: string) => void; // 連上後第一個訊息：自己的公開代號
   "room:state": (room: RoomView | null) => void; // null = 不在任何房間
   "match:status": (waiting: number | null) => void; // 排隊人數；null = 沒在排隊
-  // 整盤棋譜與目前時鐘（開局、重連時）
-  "game:sync": (moves: MoveMsg[], clock: ClockView) => void;
+  // 整盤棋譜、目前時鐘與開局設定（開局、重連時）
+  "game:sync": (moves: MoveMsg[], clock: ClockView, setup: GameSetup) => void;
   // 第 index 步（從 0 起算）與走完後的時鐘
   "game:move": (move: MoveMsg, index: number, clock: ClockView) => void;
   "chat:sync": (messages: ChatMessage[]) => void; // 自己看得到的全部訊息
@@ -106,7 +107,7 @@ export type GameSummary = {
   viewedToday: boolean; // 今天打開過的局，再看不扣次數
 };
 
-export type GameRecord = GameSummary & { celestial: boolean; moves: MoveMsg[] };
+export type GameRecord = GameSummary & GameSetup & { moves: MoveMsg[] };
 
 // GET /api/games
 export type GamesResponse = { games: GameSummary[]; quota: ReplayQuota };

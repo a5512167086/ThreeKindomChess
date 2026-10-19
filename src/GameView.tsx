@@ -66,20 +66,21 @@ const leftOf = (side: Side) =>
 const CLOCK_WARN_MS = 10_000;
 
 // 天象：目前的宿與四象效果，以及還剩幾輪換到下一個四象
-function SkyStatus({ round }: { round: number }) {
-  const phase = phaseAt(round);
+// round 是第幾輪，sky 是從角宿算起的宿數（開局的宿 + 輪數）
+function SkyStatus({ round, sky }: { round: number; sky: number }) {
+  const phase = phaseAt(sky);
   const info = PHASE_INFO[phase];
   const next = PHASE_INFO[nextPhase(phase)];
   return (
     <div style={{ margin: "6px 0", fontSize: 15 }}>
       <div>
-        天象：{mansionAt(round)}宿・第 {round + 1} 輪
+        天象：{mansionAt(sky)}宿・第 {round + 1} 輪
       </div>
       <div style={{ color: info.color, fontWeight: "bold" }}>
         {info.name}：{info.effect}
       </div>
       <div style={{ fontSize: 13, opacity: 0.7 }}>
-        再 {roundsLeftInPhase(round)} 輪後轉入
+        再 {roundsLeftInPhase(sky)} 輪後轉入
         <span style={{ color: next.color }}>{next.name}</span>（{next.effect}）
       </div>
     </div>
@@ -108,6 +109,7 @@ type GameViewProps = {
   onSendChat?: (to: Side, text: string) => void; // 沒給就不顯示聊天框（例如看棋譜）
   onMove: (pieceId: string, to: Pos) => void;
   onReviewingChange?: (reviewing: boolean) => void;
+  startAtOpening?: boolean; // 一打開就停在開局（看棋譜用），而不是最後一步
   controls?: ReactNode; // 左上角額外的按鈕區
 };
 
@@ -122,6 +124,7 @@ export function GameView({
   onSendChat,
   onMove,
   onReviewingChange,
+  startAtOpening = false,
   controls,
 }: GameViewProps) {
   const [size, setSize] = useState({
@@ -152,7 +155,9 @@ export function GameView({
   const now = useNow(!!clock && currentSide !== null && clock.pausedAt === null);
 
   // 回放：viewIndex = 看第幾步走完後的局面（0 = 開局）；null = 目前局面
-  const [viewIndex, setViewIndex] = useState<number | null>(null);
+  const [viewIndex, setViewIndex] = useState<number | null>(() =>
+    startAtOpening && game.history.length > 0 ? 0 : null
+  );
   const total = game.history.length;
   const shownIndex = viewIndex ?? total;
   const reviewing = shownIndex < total;
@@ -295,7 +300,9 @@ export function GameView({
             出局：{sideList(TURN_ORDER.filter((s) => !game.alive.includes(s)))}
           </div>
         )}
-        {game.celestial && <SkyStatus round={shownRound} />}
+        {game.celestial && (
+          <SkyStatus round={shownRound} sky={game.skyStart + shownRound} />
+        )}
         {clock && (
           <div
             style={{

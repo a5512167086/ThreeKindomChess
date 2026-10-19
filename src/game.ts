@@ -46,6 +46,7 @@ export type GameState = {
   drawReason: "noMoves" | "repetition" | null; // 和局原因
   skipped: Side[]; // 上一步之後因為無棋可走被跳過的玩家
   celestial: boolean; // 有沒有星象；false = 古典規則
+  skyStart: number; // 開局時在哪一宿（0 = 角宿），天象從這裡開始輪轉
   round: number; // 第幾輪（0 起算）：輪流順序繞回第一家時 +1
   startKey: string; // 開局局面
   history: HistoryEntry[];
@@ -58,9 +59,13 @@ const positionKey = (pieces: Piece[], mover: Side, phase: Phase | null) =>
     .sort()
     .join("|") + `#${mover}${phase ? `@${phase}` : ""}`;
 
+// 開局設定：重播同一局時要用一樣的設定，才會得到一樣的天象
+export type GameSetup = { celestial: boolean; skyStart: number };
+
 export function newGame({
   celestial = true,
-}: { celestial?: boolean } = {}): GameState {
+  skyStart = 0,
+}: Partial<GameSetup> = {}): GameState {
   const pieces = initialPieces();
   return {
     pieces,
@@ -70,11 +75,12 @@ export function newGame({
     drawReason: null,
     skipped: [],
     celestial,
+    skyStart,
     round: 0,
     startKey: positionKey(
       pieces,
       TURN_ORDER[TURN_ORDER.length - 1],
-      celestial ? phaseAt(0) : null
+      celestial ? phaseAt(skyStart) : null
     ),
     history: [],
   };
@@ -83,18 +89,19 @@ export function newGame({
 // 每一家下一次走棋時的四象（null = 古典規則）
 export type PhaseOf = (side: Side) => Phase | null;
 
-// 輪到 ref 時：輪流順序在 ref 之後（含 ref）的還在這一輪，在前面的要等到下一輪
+// 輪到 ref 時：輪流順序在 ref 之後（含 ref）的還在這一輪，在前面的要等到下一輪。
+// sky 是從角宿算起的宿數（開局的宿 + 第幾輪）
 const phasesFrom =
-  (celestial: boolean, round: number, ref: Side | null): PhaseOf =>
+  (celestial: boolean, sky: number, ref: Side | null): PhaseOf =>
   (side) => {
     if (!celestial) return null;
     const sameRound =
       !ref || TURN_ORDER.indexOf(side) >= TURN_ORDER.indexOf(ref);
-    return phaseAt(sameRound ? round : round + 1);
+    return phaseAt(sameRound ? sky : sky + 1);
   };
 
 export const phaseOf = (state: GameState): PhaseOf =>
-  phasesFrom(state.celestial, state.round, state.turn);
+  phasesFrom(state.celestial, state.skyStart + state.round, state.turn);
 
 const attacks = (
   pieces: Piece[],
@@ -196,10 +203,10 @@ function chasePairs(
 
 // 這一步是不是「打」（將軍或新產生的捉）
 const attackMoveCache = new WeakMap<HistoryEntry, boolean>();
-function isAttackMove(e: HistoryEntry, celestial: boolean): boolean {
+function isAttackMove(e: HistoryEntry, state: GameState): boolean {
   let result = attackMoveCache.get(e);
   if (result === undefined) {
-    const phases = phasesFrom(celestial, e.round, e.mover);
+    const phases = phasesFrom(state.celestial, state.skyStart + e.round, e.mover);
     const before = chasePairs(e.before, e.alive, e.mover, phases);
     result =
       givesCheck(e.after, e.mover, phases) ||
@@ -232,7 +239,7 @@ function judgeRepetition(
   const violators = movers.filter((side) =>
     cycle
       .filter((e) => e.mover === side)
-      .every((e) => isAttackMove(e, state.celestial))
+      .every((e) => isAttackMove(e, state))
   );
 
   if (violators.includes(entry.mover) && violators.length < movers.length) {
@@ -257,7 +264,7 @@ function makeEntry(state: GameState, piece: Piece, to: Pos) {
     key: positionKey(
       next.pieces,
       piece.owner,
-      state.celestial ? phaseAt(state.round) : null
+      state.celestial ? phaseAt(state.skyStart + state.round) : null
     ),
   };
   return { next, entry };
@@ -333,9 +340,9 @@ export function play(state: GameState, pieceId: string, to: Pos): GameState {
 // 從開局照順序重播一串棋步（連線同步、看棋譜用）；遇到不合法的步就停在那裡
 export function replay(
   moves: { pieceId: string; to: Pos }[],
-  options?: { celestial?: boolean }
+  setup?: Partial<GameSetup>
 ): GameState {
-  let g = newGame(options);
+  let g = newGame(setup);
   for (const m of moves) {
     const next = play(g, m.pieceId, m.to);
     if (next === g) break;

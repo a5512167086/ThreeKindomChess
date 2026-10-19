@@ -15,6 +15,13 @@
       "when": 1792442184457,
       "tag": "0001_records_and_subscriptions",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792446365084,
+      "tag": "0002_sky_start",
+      "breakpoints": true
     }
   ]
 }

@@ -91,8 +91,8 @@ export function OnlineGame({
 
     socket.on("match:status", setMatching);
 
-    socket.on("game:sync", (moves, clockView) => {
-      setGameState(replay(moves));
+    socket.on("game:sync", (moves, clockView, setup) => {
+      setGameState(replay(moves, setup));
       setClock(fromClockView(clockView, Date.now()));
     });
     socket.on("game:move", (move, index, clockView) => {

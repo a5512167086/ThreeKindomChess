@@ -7,6 +7,7 @@ import {
   boolean,
   date,
   index,
+  integer,
   jsonb,
   pgTable,
   primaryKey,
@@ -56,6 +57,7 @@ export const sessions = pgTable("sessions", {
 export const games = pgTable("games", {
   id: uuid("id").primaryKey().defaultRandom(),
   celestial: boolean("celestial").notNull(), // 有沒有星象（重播要用同一套規則）
+  skyStart: integer("sky_start").notNull().default(0), // 開局在哪一宿（重播要用同一個天象）
   moves: jsonb("moves").$type<MoveMsg[]>().notNull(),
   seats: jsonb("seats").$type<Record<Side, RecordSeat>>().notNull(), // 開局時三家各是誰
   winner: text("winner").$type<Side>(),

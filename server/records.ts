@@ -29,6 +29,7 @@ export const taipeiDay = (now: Date) => TAIPEI_DATE.format(now); // 例如 "2026
 
 export type FinishedGame = {
   celestial: boolean;
+  skyStart: number;
   moves: MoveMsg[];
   seats: Record<Side, RecordSeat>;
   players: { userId: string; side: Side }[]; // 有登入的玩家
@@ -46,6 +47,7 @@ export async function saveGame(db: Db, game: FinishedGame): Promise<string | nul
       .insert(games)
       .values({
         celestial: game.celestial,
+        skyStart: game.skyStart,
         moves: game.moves,
         seats: game.seats,
         winner: game.winner,
@@ -171,6 +173,7 @@ export async function openGame(
       moveCount: g.moves.length,
       viewedToday: !subscribed,
       celestial: g.celestial,
+      skyStart: g.skyStart,
       // jsonb 存的時候會重排物件的欄位順序，這裡排回原本的樣子
       moves: g.moves.map(({ pieceId, to }) => ({
         pieceId,

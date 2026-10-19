@@ -30,6 +30,10 @@ export const PHASE_INFO: Record<
   bird: { name: "南方朱雀", color: "#f87171", effect: "炮須隔兩子才能吃" },
 };
 
+// 開局隨機從某一宿開始，所以天象不一定從青龍開始
+export const randomSkyStart = () => Math.floor(Math.random() * MANSIONS.length);
+
+// 以下的 round 都是從角宿算起的宿數（開局的宿 + 第幾輪）
 export const mansionAt = (round: number) => MANSIONS[round % MANSIONS.length];
 
 export const phaseAt = (round: number): Phase =>
