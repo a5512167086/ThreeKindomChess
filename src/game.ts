@@ -329,3 +329,17 @@ export function play(state: GameState, pieceId: string, to: Pos): GameState {
   }
   return { ...base, turn: null, drawReason: "noMoves", skipped };
 }
+
+// 從開局照順序重播一串棋步（連線同步、看棋譜用）；遇到不合法的步就停在那裡
+export function replay(
+  moves: { pieceId: string; to: Pos }[],
+  options?: { celestial?: boolean }
+): GameState {
+  let g = newGame(options);
+  for (const m of moves) {
+    const next = play(g, m.pieceId, m.to);
+    if (next === g) break;
+    g = next;
+  }
+  return g;
+}

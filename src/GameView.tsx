@@ -104,8 +104,8 @@ type GameViewProps = {
   canPlay: boolean; // 目前輪到的那一家能不能由這台電腦操作
   turnNote: string; // 狀態列的補充說明，例如「電腦思考中…」
   seatName: (side: Side) => string; // 例如「藍方」「藍方（小明）」
-  chats: ChatMessage[]; // 我看得到的私聊訊息
-  onSendChat: (to: Side, text: string) => void;
+  chats?: ChatMessage[]; // 我看得到的私聊訊息
+  onSendChat?: (to: Side, text: string) => void; // 沒給就不顯示聊天框（例如看棋譜）
   onMove: (pieceId: string, to: Pos) => void;
   onReviewingChange?: (reviewing: boolean) => void;
   controls?: ReactNode; // 左上角額外的按鈕區
@@ -118,7 +118,7 @@ export function GameView({
   canPlay,
   turnNote,
   seatName,
-  chats,
+  chats = [],
   onSendChat,
   onMove,
   onReviewingChange,
@@ -247,7 +247,7 @@ export function GameView({
         color: PANEL_COLORS[m.from].stroke,
         text: m.text,
       })),
-    onSend: (text: string) => onSendChat(partner, text),
+    onSend: (text: string) => onSendChat?.(partner, text),
   });
 
   return (
@@ -352,8 +352,12 @@ export function GameView({
       </div>
 
       {/* 私聊：左下、右下分別是畫面上左右兩邊的對手 */}
-      <ChatBox {...chatBoxProps(leftOf(me), "left")} />
-      <ChatBox {...chatBoxProps(rightOf(me), "right")} />
+      {onSendChat && (
+        <>
+          <ChatBox {...chatBoxProps(leftOf(me), "left")} />
+          <ChatBox {...chatBoxProps(rightOf(me), "right")} />
+        </>
+      )}
 
       {/* 右上：棋譜 */}
       <div

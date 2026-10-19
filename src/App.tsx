@@ -1,15 +1,17 @@
 // 大廳：單機對電腦，或連線（建房、輸入房號加入、自動配對）
 
 import { useEffect, useState } from "react";
-import { type MeResponse, MAX_NAME_LENGTH } from "./protocol";
+import { type MeResponse, MAX_NAME_LENGTH, PLAN_NAMES } from "./protocol";
 import { fetchMe, loginUrl, logout, saveName, savedName, savedRoom } from "./net";
 import { LocalGame } from "./LocalGame";
 import { type OnlineAction, OnlineGame, Panel } from "./OnlineGame";
+import { RecordsPage } from "./Records";
 
 type Mode =
   | { kind: "menu" }
   | { kind: "local" }
-  | { kind: "online"; action: OnlineAction };
+  | { kind: "online"; action: OnlineAction }
+  | { kind: "records" };
 
 // 邀請連結帶的房號：?room=ABCDE
 const inviteCode = () =>
@@ -66,6 +68,19 @@ export default function App() {
       <OnlineGame name={name.trim()} action={mode.action} onExit={backToMenu} />
     );
   }
+  if (mode.kind === "records" && me?.account) {
+    const account = me.account;
+    return (
+      <RecordsPage
+        subscription={account.subscription}
+        fakeBilling={me.fakeBilling}
+        onSubscriptionChange={(subscription) =>
+          setMe({ ...me, account: { ...account, subscription } })
+        }
+        onExit={() => backToMenu()}
+      />
+    );
+  }
 
   const trimmed = name.trim();
   const goOnline = (action: OnlineAction) => {
@@ -96,7 +111,15 @@ export default function App() {
               style={{ borderRadius: "50%" }}
             />
           )}
-          <span style={{ flex: 1, minWidth: 0 }}>已登入：{me.account.name}</span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            已登入：{me.account.name}
+            {me.account.subscription && (
+              <span style={{ marginLeft: 6, fontSize: 12, color: "#facc15" }}>
+                {PLAN_NAMES[me.account.subscription.plan]}
+              </span>
+            )}
+          </span>
+          <button onClick={() => setMode({ kind: "records" })}>我的棋譜</button>
           <button
             onClick={async () => {
               if (await logout()) setMe({ ...me, account: null });

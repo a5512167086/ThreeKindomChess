@@ -4,8 +4,8 @@
 // 才用同一份 play() 套用到本地棋局。
 
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
-import type { Pos, Side } from "./rules";
-import { type GameState, TURN_ORDER, newGame, play } from "./game";
+import type { Side } from "./rules";
+import { type GameState, TURN_ORDER, play, replay } from "./game";
 import { type ChatMessage, type RoomView, ROOM_SIZE } from "./protocol";
 import { type GameSocket, connect, saveRoom } from "./net";
 import { type Clock, fromClockView } from "./clock";
@@ -19,17 +19,6 @@ export type OnlineAction =
   | { type: "resume" }; // 重新整理後回到原本的房間
 
 const ERROR_SHOW_MS = 3000;
-
-// 從頭重播整盤棋譜
-function replay(moves: { pieceId: string; to: Pos }[]): GameState {
-  let g = newGame();
-  for (const m of moves) {
-    const next = play(g, m.pieceId, m.to);
-    if (next === g) break;
-    g = next;
-  }
-  return g;
-}
 
 export function OnlineGame({
   name,

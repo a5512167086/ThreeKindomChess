@@ -9,6 +9,7 @@ export default defineConfig({
     proxy: {
       '/socket.io': { target: 'http://localhost:3001', ws: true },
       '/auth': 'http://localhost:3001',
+      '/api': 'http://localhost:3001',
     },
   },
 })

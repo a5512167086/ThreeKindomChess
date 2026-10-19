@@ -9,6 +9,8 @@ import { createHash, randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { and, eq, gt } from "drizzle-orm";
 import type { Db } from "./db";
+import { fromOwnSite, json, redirect } from "./http";
+import { subscriptionOf } from "./billing";
 import { identities, sessions, users } from "./schema";
 import {
   type GoogleConfig,
@@ -25,6 +27,7 @@ export type Account = { id: string; name: string; avatarUrl: string | null };
 export type AuthConfig = {
   publicOrigin: string; // 玩家在瀏覽器網址列看到的網址，例如 http://localhost:5173
   google: GoogleConfig | null; // 沒設定就不能用 Google 登入
+  fakeBilling?: boolean; // 開發用：不付錢就能訂閱（正式上線一定要關）
   fetch?: typeof fetch; // 測試時換成假的
 };
 
@@ -137,20 +140,6 @@ export async function signInWith(
 
 // ---- HTTP 路由 ----
 
-function redirect(res: ServerResponse, location: string, cookies: string[] = []) {
-  res.writeHead(302, { Location: location, "Set-Cookie": cookies, "Cache-Control": "no-store" });
-  res.end();
-}
-
-function json(res: ServerResponse, status: number, body: unknown, cookies: string[] = []) {
-  res.writeHead(status, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store",
-    "Set-Cookie": cookies,
-  });
-  res.end(JSON.stringify(body));
-}
-
 // 處理 /auth/* 的請求；不是這裡的路徑就回傳 false 交給別人
 export function createAuthHandler(db: Db, config: AuthConfig) {
   const fetchFn = config.fetch ?? fetch;
@@ -166,17 +155,20 @@ export function createAuthHandler(db: Db, config: AuthConfig) {
       if (req.method === "GET" && url.pathname === "/auth/me") {
         const account = await accountFromCookie(db, req.headers.cookie);
         const body: MeResponse = {
-          account: account && { name: account.name, avatarUrl: account.avatarUrl },
+          account: account && {
+            name: account.name,
+            avatarUrl: account.avatarUrl,
+            subscription: await subscriptionOf(db, account.id),
+          },
           providers,
+          fakeBilling: !!config.fakeBilling,
         };
         json(res, 200, body);
         return true;
       }
 
       if (req.method === "POST" && url.pathname === "/auth/logout") {
-        // 只接受從自己網站送來的登出
-        const origin = req.headers.origin;
-        if (origin && origin !== config.publicOrigin) {
+        if (!fromOwnSite(req, config.publicOrigin)) {
           json(res, 403, { error: "forbidden" });
           return true;
         }

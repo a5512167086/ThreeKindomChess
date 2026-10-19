@@ -62,8 +62,53 @@ export interface ServerToClientEvents {
 // 已登入的話伺服器改用 cookie 裡的帳號，playerId 會被忽略。
 export type HandshakeAuth = { playerId: string; name: string };
 
+// ---- 帳號（HTTP：/auth/*）----
+
+export type Plan = "monthly" | "yearly";
+export const PLAN_NAMES: Record<Plan, string> = { monthly: "月訂閱", yearly: "年訂閱" };
+
+// until 是訂閱到期時間（ISO 字串）
+export type SubscriptionInfo = { plan: Plan; until: string };
+
 // GET /auth/me 的回應：沒登入時 account 是 null；
-// providers 是伺服器有設定好的登入方式（沒設定就不顯示按鈕）
+// providers 是伺服器有設定好的登入方式（沒設定就不顯示按鈕）；
+// fakeBilling 表示開發用的假訂閱按鈕可以用
 export type LoginProvider = "google";
-export type AccountInfo = { name: string; avatarUrl: string | null };
-export type MeResponse = { account: AccountInfo | null; providers: LoginProvider[] };
+export type AccountInfo = {
+  name: string;
+  avatarUrl: string | null;
+  subscription: SubscriptionInfo | null;
+};
+export type MeResponse = {
+  account: AccountInfo | null;
+  providers: LoginProvider[];
+  fakeBilling: boolean;
+};
+
+// ---- 我的棋譜（HTTP：/api/*）----
+
+export type DrawReason = "noMoves" | "repetition";
+
+// 開局時坐在那一家的是誰
+export type RecordSeat = { kind: "ai" } | { kind: "human"; name: string };
+
+// 免費帳號每天能打開幾局棋譜；訂閱中不限
+export type ReplayQuota = { subscribed: boolean; limit: number; usedToday: number };
+
+export type GameSummary = {
+  id: string;
+  finishedAt: string;
+  mySide: Side;
+  seats: Record<Side, RecordSeat>;
+  winner: Side | null;
+  drawReason: DrawReason | null;
+  moveCount: number;
+  viewedToday: boolean; // 今天打開過的局，再看不扣次數
+};
+
+export type GameRecord = GameSummary & { celestial: boolean; moves: MoveMsg[] };
+
+// GET /api/games
+export type GamesResponse = { games: GameSummary[]; quota: ReplayQuota };
+// POST /api/games/:id/open；次數用完時 status 429，回傳 { error: "quota", quota }
+export type OpenGameResponse = { game: GameRecord; quota: ReplayQuota };

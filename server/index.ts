@@ -9,6 +9,8 @@ import { createServer } from "node:http";
 import { Server, type Socket } from "socket.io";
 import { openDb } from "./db";
 import { type Account, accountFromCookie, createAuthHandler, renameAccount } from "./auth";
+import { createApiHandler } from "./api";
+import { saveGame } from "./records";
 import { type GameState, TURN_ORDER, chatOpen, newGame, play } from "../src/game";
 import { chooseMove } from "../src/ai";
 import {
@@ -24,6 +26,7 @@ import {
   type ClientToServerEvents,
   type HandshakeAuth,
   type MoveMsg,
+  type RecordSeat,
   type RoomStatus,
   type RoomView,
   type SeatInfo,
@@ -44,6 +47,8 @@ const GOOGLE =
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       }
     : null;
+// 開發用：不付錢就能訂閱。正式上線絕對不要設
+const FAKE_BILLING = process.env.FAKE_BILLING === "1";
 const USER_PREFIX = "user:"; // 已登入玩家的 playerId 開頭，訪客不能用
 const AI_DELAY_MS = 600; // 電腦每步之間的停頓
 const WAITING_GRACE_MS = 30_000; // 還沒開局的房間，斷線多久就移出
@@ -62,12 +67,16 @@ type GameSocket = Socket<
 type Player = {
   id: string;
   publicId: string;
+  userId: string | null; // 有登入才有，棋譜存在這個帳號底下
   name: string;
   socketId: string | null;
   roomCode: string | null;
 };
 
 type Seat = { kind: "human"; playerId: string } | { kind: "ai" };
+
+// 開局時坐在各家的人（中途離開由電腦接手，棋譜仍記在原本的人身上）
+type RosterSeat = { name: string; userId: string | null } | null;
 
 type Room = {
   code: string;
@@ -76,6 +85,8 @@ type Room = {
   status: RoomStatus;
   round: number;
   seats: Record<Side, Seat> | null;
+  roster: Record<Side, RosterSeat> | null;
+  startedAt: Date | null;
   game: GameState | null;
   moves: MoveMsg[];
   chats: ChatMessage[];
@@ -94,10 +105,16 @@ const { db, label: dbLabel } = await openDb({
   url: process.env.DATABASE_URL,
   pgliteDir: process.env.PGLITE_DIR,
 });
-const handleAuth = createAuthHandler(db, { publicOrigin: PUBLIC_ORIGIN, google: GOOGLE });
+const handleAuth = createAuthHandler(db, {
+  publicOrigin: PUBLIC_ORIGIN,
+  google: GOOGLE,
+  fakeBilling: FAKE_BILLING,
+});
+const handleApi = createApiHandler(db, { publicOrigin: PUBLIC_ORIGIN, fakeBilling: FAKE_BILLING });
 
 const httpServer = createServer(async (req, res) => {
   if (await handleAuth(req, res)) return;
+  if (await handleApi(req, res)) return;
   res.writeHead(404).end();
 });
 const io = new Server<
@@ -230,6 +247,8 @@ function createRoom(hostId: string): Room {
     status: "waiting",
     round: 0,
     seats: null,
+    roster: null,
+    startedAt: null,
     game: null,
     moves: [],
     chats: [],
@@ -315,6 +334,14 @@ function startGame(room: Room) {
   ) as Record<Side, Seat>;
 
   room.seats = seats;
+  room.roster = Object.fromEntries(
+    TURN_ORDER.map((side): [Side, RosterSeat] => {
+      const seat = seats[side];
+      const player = seat.kind === "human" ? players.get(seat.playerId) : undefined;
+      return [side, player ? { name: player.name, userId: player.userId } : null];
+    })
+  ) as Record<Side, RosterSeat>;
+  room.startedAt = new Date();
   room.game = newGame();
   room.moves = [];
   room.chats = [];
@@ -345,10 +372,36 @@ function applyMove(room: Room, move: MoveMsg): boolean {
   if (next.turn === null) {
     room.status = "finished";
     broadcastRoom(room);
+    saveRecord(room);
   }
   scheduleAi(room);
   scheduleTimeout(room);
   return true;
+}
+
+// 對局結束：有登入玩家參加就把棋譜存進資料庫（存失敗不影響對局）
+function saveRecord(room: Room) {
+  const { game, roster, startedAt } = room;
+  if (!game || !roster || !startedAt) return;
+  const accounts = TURN_ORDER.flatMap((side) => {
+    const userId = roster[side]?.userId;
+    return userId ? [{ userId, side }] : [];
+  });
+  saveGame(db, {
+    celestial: game.celestial,
+    moves: [...room.moves],
+    seats: Object.fromEntries(
+      TURN_ORDER.map((side): [Side, RecordSeat] => {
+        const seat = roster[side];
+        return [side, seat ? { kind: "human", name: seat.name } : { kind: "ai" }];
+      })
+    ) as Record<Side, RecordSeat>,
+    players: accounts,
+    winner: game.winner,
+    drawReason: game.drawReason,
+    startedAt,
+    finishedAt: new Date(),
+  }).catch((err) => console.error(`房間 ${room.code} 的棋譜存檔失敗`, err));
 }
 
 const clockView = (room: Room) =>
@@ -453,6 +506,7 @@ io.on("connection", (socket: GameSocket) => {
     player = {
       id: playerId,
       publicId: randomUUID(),
+      userId: account?.id ?? null,
       name: "",
       socketId: null,
       roomCode: null,
@@ -599,4 +653,5 @@ httpServer.listen(PORT, () => {
   console.log(`三國象棋伺服器啟動：http://localhost:${PORT}`);
   console.log(`資料庫：${dbLabel}`);
   console.log(`Google 登入：${GOOGLE ? "已設定" : "未設定（.env 沒有 GOOGLE_CLIENT_ID / SECRET）"}`);
+  if (FAKE_BILLING) console.log("假訂閱：開啟（只能在開發時用）");
 });

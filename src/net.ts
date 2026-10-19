@@ -3,10 +3,15 @@
 import { io, type Socket } from "socket.io-client";
 import type {
   ClientToServerEvents,
+  GamesResponse,
   HandshakeAuth,
   LoginProvider,
   MeResponse,
+  OpenGameResponse,
+  Plan,
+  ReplayQuota,
   ServerToClientEvents,
+  SubscriptionInfo,
 } from "./protocol";
 
 export type GameSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -77,6 +82,60 @@ export async function logout(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// ---- 我的棋譜與訂閱（要登入）----
+
+async function post<T>(path: string, body?: unknown): Promise<{ status: number; data: T | null }> {
+  try {
+    const res = await fetch(path, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body ?? {}),
+    });
+    return { status: res.status, data: (await res.json()) as T };
+  } catch {
+    return { status: 0, data: null };
+  }
+}
+
+export async function fetchGames(): Promise<GamesResponse | null> {
+  try {
+    const res = await fetch("/api/games", { credentials: "same-origin" });
+    return res.ok ? ((await res.json()) as GamesResponse) : null;
+  } catch {
+    return null;
+  }
+}
+
+// 打開一局：成功、今天次數用完、或其他錯誤
+export async function openGame(
+  id: string
+): Promise<
+  | ({ kind: "ok" } & OpenGameResponse)
+  | { kind: "quota"; quota: ReplayQuota }
+  | { kind: "error" }
+> {
+  const { status, data } = await post<OpenGameResponse & { quota: ReplayQuota }>(
+    `/api/games/${encodeURIComponent(id)}/open`
+  );
+  if (status === 200 && data) return { kind: "ok", ...data };
+  if (status === 429 && data) return { kind: "quota", quota: data.quota };
+  return { kind: "error" };
+}
+
+// 開發用的假訂閱；失敗回傳 undefined
+export async function fakeSubscribe(plan: Plan): Promise<SubscriptionInfo | null | undefined> {
+  const { status, data } = await post<{ subscription: SubscriptionInfo | null }>(
+    "/api/billing/fake/subscribe",
+    { plan }
+  );
+  return status === 200 && data ? data.subscription : undefined;
+}
+
+export async function fakeCancel(): Promise<boolean> {
+  return (await post("/api/billing/fake/cancel")).status === 200;
 }
 
 // 連到同一個網址的 /socket.io（開發時由 Vite 轉給伺服器）
