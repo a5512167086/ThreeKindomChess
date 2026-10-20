@@ -7,6 +7,7 @@
 // - 長將、長捉（長打）：同一局面第 3 次出現時，循環中每步都在將軍或捉子的人
 //   不能再走出這個局面（必須變著）；沒人長打或所有人都長打則判和
 // - 星象（sky.ts）：每一輪推進一宿，每一家都用「自己那一輪」的四象走棋
+// - 朱雀：輪到的人可以連走兩步；第一步吃了別家的子或將軍別家，就只走這一步
 
 import {
   type Piece,
@@ -48,16 +49,18 @@ export type GameState = {
   celestial: boolean; // 有沒有星象；false = 古典規則
   skyStart: number; // 開局時在哪一宿（0 = 角宿），天象從這裡開始輪轉
   round: number; // 第幾輪（0 起算）：輪流順序繞回第一家時 +1
+  extraMove: boolean; // 朱雀的第二步：輪到的人剛走完第一步，還要再走一步
   startKey: string; // 開局局面
   history: HistoryEntry[];
 };
 
 // 局面識別：所有棋子（主人、原主人、種類、位置）＋ 剛走完的人 ＋ 當時的四象
-const positionKey = (pieces: Piece[], mover: Side, phase: Phase | null) =>
+// ＋ 走完的人是不是還要再走（朱雀的第一步，結尾加「+」）
+const positionKey = (pieces: Piece[], mover: Side, phase: Phase | null, again = false) =>
   pieces
     .map((p) => `${p.owner}/${p.origin}/${p.kind}/${posKey(p.pos)}`)
     .sort()
-    .join("|") + `#${mover}${phase ? `@${phase}` : ""}`;
+    .join("|") + `#${mover}${phase ? `@${phase}` : ""}${again ? "+" : ""}`;
 
 // 開局設定：重播同一局時要用一樣的設定，才會得到一樣的天象
 export type GameSetup = { celestial: boolean; skyStart: number };
@@ -77,6 +80,7 @@ export function newGame({
     celestial,
     skyStart,
     round: 0,
+    extraMove: false,
     startKey: positionKey(
       pieces,
       TURN_ORDER[TURN_ORDER.length - 1],
@@ -251,8 +255,18 @@ function judgeRepetition(
   return "none";
 }
 
+// 朱雀時，這一步走完還能不能再走一步：要是這一輪的第一步，而且沒吃到別家的子、也沒將軍別家
+function earnsExtraMove(state: GameState, piece: Piece, to: Pos, after: Piece[]): boolean {
+  if (!state.celestial || state.extraMove) return false;
+  const sky = state.skyStart + state.round;
+  if (phaseAt(sky) !== "bird") return false;
+  if (state.pieces.some((p) => samePos(p.pos, to))) return false; // 落點有子就是吃子（不能吃自己的）
+  return !givesCheck(after, piece.owner, phasesFrom(state.celestial, sky, piece.owner));
+}
+
 function makeEntry(state: GameState, piece: Piece, to: Pos) {
   const next = resolveMove(state.pieces, state.alive, piece, to);
+  const again = earnsExtraMove(state, piece, to, next.pieces);
   const entry: HistoryEntry = {
     mover: piece.owner,
     from: piece.pos,
@@ -264,10 +278,11 @@ function makeEntry(state: GameState, piece: Piece, to: Pos) {
     key: positionKey(
       next.pieces,
       piece.owner,
-      state.celestial ? phaseAt(state.skyStart + state.round) : null
+      state.celestial ? phaseAt(state.skyStart + state.round) : null,
+      again
     ),
   };
-  return { next, entry };
+  return { next, entry, again };
 }
 
 // 不管輪到誰，這顆棋子在目前局面能走的位置
@@ -306,12 +321,13 @@ export function play(state: GameState, pieceId: string, to: Pos): GameState {
     return state;
   }
 
-  const { next, entry } = makeEntry(state, piece, to);
+  const { next, entry, again } = makeEntry(state, piece, to);
   const base: GameState = {
     ...state,
     pieces: next.pieces,
     alive: next.alive,
     skipped: [],
+    extraMove: false,
     history: [...state.history, entry],
   };
 
@@ -320,6 +336,12 @@ export function play(state: GameState, pieceId: string, to: Pos): GameState {
   }
   if (judgeRepetition(state, entry) === "draw") {
     return { ...base, turn: null, drawReason: "repetition" };
+  }
+
+  // 朱雀的第一步沒吃子也沒將軍：同一家再走一步（沒有合法步可走就照常換人）
+  if (again) {
+    const candidate: GameState = { ...base, turn: piece.owner, extraMove: true };
+    if (hasAnyMove(candidate, piece.owner)) return candidate;
   }
 
   // 找下一個有棋可走的玩家（最後才輪回自己）；都沒有就和局。

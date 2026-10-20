@@ -163,22 +163,21 @@ export function pieceMoves(
         break;
 
       case "cannon": {
-        // 隔一子（朱雀時要隔兩子）才能吃；沒隔子時只能走空格
-        const screensNeeded = phase === "bird" ? 2 : 1;
+        // 隔一子才能吃；沒隔子時只能走空格
         for (const [df, dy] of ORTHOGONAL) {
-          let screens = 0;
+          let screened = false;
           for (let k = 1; ; k++) {
             const p = at(f0 + df * k, y0 + dy * k);
             if (!p) break;
             if (!occupant(p)) {
-              if (screens === 0) add(p);
+              if (!screened) add(p);
               continue;
             }
-            if (screens === screensNeeded) {
+            if (screened) {
               if (canLand(p)) add(p);
               break;
             }
-            screens++;
+            screened = true;
           }
         }
         break;

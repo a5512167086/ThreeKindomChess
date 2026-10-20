@@ -123,6 +123,12 @@
   font-size: 14px;
   color: var(--grey-ink);
 }
+/* 朱雀的第二步：名字旁邊一個朱砂小字 */
+.turn-again {
+  margin-left: 10px;
+  font-size: 15px;
+  color: var(--vermilion);
+}
 
 /* 每行固定高、不折行：有沒有字都佔一樣的位置 */
 .alerts,

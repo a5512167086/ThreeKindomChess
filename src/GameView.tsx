@@ -481,6 +481,8 @@ function TurnHeader({
       <div>
         <p className="turn-main" style={game.winner ? { color: SIDE_INK[side] } : undefined}>
           {game.winner ? `${short}獲勝` : short}
+          {/* 朱雀的第二步 */}
+          {!game.winner && game.extraMove && <span className="turn-again">再走一步</span>}
         </p>
         {/* 第二行一直留著（沒字就空白），「電腦思考中…」出現消失時下面才不會跳 */}
         <p className="turn-sub">{sub || " "}</p>

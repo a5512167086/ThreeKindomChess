@@ -27,7 +27,11 @@ export const PHASE_INFO: Record<
     effect: "相象可過河；降士可出宮",
   },
   tiger: { name: "西方白虎", color: "#e5e7eb", effect: "未過河的兵也能橫走" },
-  bird: { name: "南方朱雀", color: "#f87171", effect: "炮須隔兩子才能吃" },
+  bird: {
+    name: "南方朱雀",
+    color: "#f87171",
+    effect: "可連走兩步；第一步吃子或將軍就只走一步",
+  },
 };
 
 // 開局隨機從某一宿開始，所以天象不一定從青龍開始
