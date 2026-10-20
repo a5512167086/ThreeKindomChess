@@ -1,18 +1,21 @@
 // 我的棋譜：對局結束時存檔、列出自己下過的局、打開一局（免費帳號每天有次數上限）
 
-import { and, count, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "./db";
-import { gamePlayers, games, replayViews } from "./schema";
+import { gamePlayers, games, replayViews, users } from "./schema";
 import { subscriptionOf } from "./billing";
 import type {
   DrawReason,
   GameRecord,
   GameSummary,
   MoveMsg,
+  ProfileStats,
+  RatingChange,
   RecordSeat,
   ReplayQuota,
 } from "../src/protocol";
 import type { Side } from "../src/rules";
+import { rate } from "../src/rank";
 
 export const FREE_REPLAYS_PER_DAY = 3;
 const LIST_LIMIT = 100;
@@ -33,16 +36,44 @@ export type FinishedGame = {
   moves: MoveMsg[];
   seats: Record<Side, RecordSeat>;
   players: { userId: string; side: Side }[]; // 有登入的玩家
+  places?: Partial<Record<Side, number>>; // 各家第幾名（1 起算）
   winner: Side | null;
   drawReason: DrawReason | null;
   startedAt: Date;
   finishedAt: Date;
+  // 積分對局：名次（由好到壞，同組同名次）。三家都要是登入玩家
+  rated?: { order: Side[][] };
 };
 
-// 存一局；沒有登入玩家參加就不存，回傳 null
-export async function saveGame(db: Db, game: FinishedGame): Promise<string | null> {
+export type SavedGame = { id: string; ratings: Partial<Record<Side, RatingChange>> };
+
+// 存一局；沒有登入玩家參加就不存，回傳 null。
+// 積分對局在同一個交易裡算分，並鎖住三個帳號，避免同時結束的兩局互相蓋掉積分
+export async function saveGame(db: Db, game: FinishedGame): Promise<SavedGame | null> {
   if (!game.players.length) return null;
   return db.transaction(async (tx) => {
+    const ratings: Partial<Record<Side, RatingChange>> = {};
+    if (game.rated) {
+      const rows = await tx
+        .select({ id: users.id, rating: users.rating, games: users.ratedGames })
+        .from(users)
+        .where(inArray(users.id, game.players.map((p) => p.userId)))
+        .orderBy(users.id)
+        .for("update");
+      const rated = game.players.flatMap((p) => {
+        const row = rows.find((r) => r.id === p.userId);
+        return row ? [{ ...p, rating: row.rating, games: row.games }] : [];
+      });
+      const after = rate(rated, game.rated.order);
+      for (const p of rated) {
+        const next = after.get(p.side)!;
+        ratings[p.side] = { before: p.rating, after: next };
+        await tx
+          .update(users)
+          .set({ rating: next, ratedGames: p.games + 1 })
+          .where(eq(users.id, p.userId));
+      }
+    }
     const [row] = await tx
       .insert(games)
       .values({
@@ -52,16 +83,68 @@ export async function saveGame(db: Db, game: FinishedGame): Promise<string | nul
         seats: game.seats,
         winner: game.winner,
         drawReason: game.drawReason,
+        rated: !!game.rated,
         startedAt: game.startedAt,
         finishedAt: game.finishedAt,
       })
       .returning({ id: games.id });
     await tx
       .insert(gamePlayers)
-      .values(game.players.map((p) => ({ gameId: row.id, userId: p.userId, side: p.side })));
-    return row.id;
+      .values(
+        game.players.map((p) => ({
+          gameId: row.id,
+          userId: p.userId,
+          side: p.side,
+          place: game.places?.[p.side] ?? null,
+          ratingBefore: ratings[p.side]?.before ?? null,
+          ratingAfter: ratings[p.side]?.after ?? null,
+        }))
+      );
+    return { id: row.id, ratings };
   });
 }
+
+export async function ratingOf(
+  db: Db,
+  userId: string
+): Promise<{ rating: number; games: number } | null> {
+  const [row] = await db
+    .select({ rating: users.rating, games: users.ratedGames })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return row ?? null;
+}
+
+// 個人資料的戰績：積分局各名次幾次；所有存下來的局數、勝場、和局
+export async function statsOf(db: Db, userId: string): Promise<ProfileStats> {
+  const byPlace = await db
+    .select({ place: gamePlayers.place, n: count() })
+    .from(gamePlayers)
+    .innerJoin(games, eq(gamePlayers.gameId, games.id))
+    .where(and(eq(gamePlayers.userId, userId), eq(games.rated, true)))
+    .groupBy(gamePlayers.place);
+  const places: [number, number, number] = [0, 0, 0];
+  for (const row of byPlace) {
+    if (row.place && row.place >= 1 && row.place <= 3) places[row.place - 1] += row.n;
+  }
+  const [all] = await db
+    .select({
+      games: count(),
+      wins: sql<number>`count(*) filter (where ${games.winner} = ${gamePlayers.side})`.mapWith(Number),
+      draws: sql<number>`count(*) filter (where ${games.winner} is null)`.mapWith(Number),
+    })
+    .from(gamePlayers)
+    .innerJoin(games, eq(gamePlayers.gameId, games.id))
+    .where(eq(gamePlayers.userId, userId));
+  return {
+    rated: { games: byPlace.reduce((a, r) => a + r.n, 0), places },
+    all: { games: all?.games ?? 0, wins: all?.wins ?? 0, draws: all?.draws ?? 0 },
+  };
+}
+
+const changeOf = (before: number | null, after: number | null): RatingChange | null =>
+  before !== null && after !== null ? { before, after } : null;
 
 async function usedToday(db: Db, userId: string, day: string): Promise<number> {
   const [row] = await db
@@ -91,6 +174,8 @@ export async function listGames(db: Db, userId: string, now = new Date()): Promi
       winner: games.winner,
       drawReason: games.drawReason,
       moveCount: sql<number>`jsonb_array_length(${games.moves})`.mapWith(Number),
+      ratingBefore: gamePlayers.ratingBefore,
+      ratingAfter: gamePlayers.ratingAfter,
       viewed: replayViews.gameId,
     })
     .from(gamePlayers)
@@ -106,10 +191,11 @@ export async function listGames(db: Db, userId: string, now = new Date()): Promi
     .where(eq(gamePlayers.userId, userId))
     .orderBy(desc(games.finishedAt))
     .limit(LIST_LIMIT);
-  return rows.map(({ viewed, finishedAt, ...r }) => ({
+  return rows.map(({ viewed, finishedAt, ratingBefore, ratingAfter, ...r }) => ({
     ...r,
     finishedAt: finishedAt.toISOString(),
     viewedToday: viewed !== null,
+    rating: changeOf(ratingBefore, ratingAfter),
   }));
 }
 
@@ -127,7 +213,12 @@ export async function openGame(
 ): Promise<OpenResult> {
   if (!UUID.test(gameId)) return { kind: "notFound" };
   const [row] = await db
-    .select({ game: games, mySide: gamePlayers.side })
+    .select({
+      game: games,
+      mySide: gamePlayers.side,
+      ratingBefore: gamePlayers.ratingBefore,
+      ratingAfter: gamePlayers.ratingAfter,
+    })
     .from(gamePlayers)
     .innerJoin(games, eq(gamePlayers.gameId, games.id))
     .where(and(eq(gamePlayers.gameId, gameId), eq(gamePlayers.userId, userId)))
@@ -172,6 +263,7 @@ export async function openGame(
       drawReason: g.drawReason,
       moveCount: g.moves.length,
       viewedToday: !subscribed,
+      rating: changeOf(row.ratingBefore, row.ratingAfter),
       celestial: g.celestial,
       skyStart: g.skyStart,
       // jsonb 存的時候會重排物件的欄位順序，這裡排回原本的樣子

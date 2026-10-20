@@ -1,0 +1,36 @@
+# Render 部署設定（Blueprint）。在 Render 後台 New → Blueprint 選這個 repo 就會照這裡建立服務。
+# sync: false 的變數建立時會要你在後台填，不會寫進 git。
+
+services:
+  - type: web
+    name: threekingdoms-chess
+    runtime: node
+    # 免費方案閒置 15 分鐘會休眠：連線對戰會斷、藍新的付款通知可能打不進來。正式收款請用 starter 以上
+    plan: starter
+    region: singapore # 離台灣最近
+    buildCommand: yarn install --frozen-lockfile && yarn build
+    startCommand: yarn start
+    healthCheckPath: /auth/me
+    envVars:
+      # 玩家看到的網址，例如 https://threeenclosures.com（沒綁網域前先填 https://xxx.onrender.com）
+      - key: PUBLIC_ORIGIN
+        sync: false
+      # 一定要填 PostgreSQL（例如 Neon）。不填會用 PGlite 存在主機硬碟，每次部署資料都會不見
+      - key: DATABASE_URL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: NEWEBPAY_MERCHANT_ID
+        sync: false
+      - key: NEWEBPAY_HASH_KEY
+        sync: false
+      - key: NEWEBPAY_HASH_IV
+        sync: false
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      # 正式收款時再到後台加 NEWEBPAY_LIVE=1、PAYPAL_LIVE=1。
+      # 不要加 FAKE_BILLING

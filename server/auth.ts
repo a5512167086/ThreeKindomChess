@@ -11,6 +11,7 @@ import { and, eq, gt } from "drizzle-orm";
 import type { Db } from "./db";
 import { fromOwnSite, json, redirect } from "./http";
 import { subscriptionOf } from "./billing";
+import { ratingOf } from "./records";
 import { identities, sessions, users } from "./schema";
 import {
   type GoogleConfig,
@@ -20,13 +21,19 @@ import {
   googleAuthUrl,
   newLoginAttempt,
 } from "./google";
-import { type LoginProvider, type MeResponse, MAX_NAME_LENGTH } from "../src/protocol";
+import {
+  type LoginProvider,
+  type MeResponse,
+  type PaymentProvider,
+  MAX_NAME_LENGTH,
+} from "../src/protocol";
 
 export type Account = { id: string; name: string; avatarUrl: string | null };
 
 export type AuthConfig = {
   publicOrigin: string; // 玩家在瀏覽器網址列看到的網址，例如 http://localhost:5173
   google: GoogleConfig | null; // 沒設定就不能用 Google 登入
+  payments?: PaymentProvider[]; // 有設定好的金流
   fakeBilling?: boolean; // 開發用：不付錢就能訂閱（正式上線一定要關）
   fetch?: typeof fetch; // 測試時換成假的
 };
@@ -154,13 +161,17 @@ export function createAuthHandler(db: Db, config: AuthConfig) {
     try {
       if (req.method === "GET" && url.pathname === "/auth/me") {
         const account = await accountFromCookie(db, req.headers.cookie);
+        const rating = account ? await ratingOf(db, account.id) : null;
         const body: MeResponse = {
           account: account && {
             name: account.name,
             avatarUrl: account.avatarUrl,
+            rating: rating?.rating ?? 0,
+            ratedGames: rating?.games ?? 0,
             subscription: await subscriptionOf(db, account.id),
           },
           providers,
+          payments: config.payments ?? [],
           fakeBilling: !!config.fakeBilling,
         };
         json(res, 200, body);

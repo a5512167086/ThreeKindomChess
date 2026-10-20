@@ -27,6 +27,7 @@ import { KIND_LABELS, chineseNumber, moveNotation } from "./notation";
 import { type Clock, formatTime, timeLeft } from "./clock";
 import { Board } from "./Board";
 import { PANEL_NAMES, SIDE_INK, squareName } from "./sides";
+import { useSettings } from "./settings";
 import "./game.css";
 
 type MoveRecord = GameState["history"][number];
@@ -71,24 +72,21 @@ const PHASE_INK: Record<Phase, string> = {
   bird: "#c23b22",
 };
 
-// 天象：目前的宿與四象效果，以及還剩幾輪換到下一個四象
-// round 是第幾輪，sky 是從角宿算起的宿數（開局的宿 + 輪數）
-function SkyStatus({ round, sky }: { round: number; sky: number }) {
+// 天象：第一行是四象和效果，第二行小字寫宿名、第幾輪、還剩幾輪換到下一個四象
+// sky 是從角宿算起的宿數（開局的宿 + 輪數）
+function SkySummary({ round, sky }: { round: number; sky: number }) {
   const phase = phaseAt(sky);
   const info = PHASE_INFO[phase];
   const next = PHASE_INFO[nextPhase(phase)];
   return (
     <section className="sky">
-      <p className="sky-label">天象</p>
-      <p className="sky-mansion">
-        {mansionAt(sky)}宿{"　"}第{chineseNumber(round + 1)}輪
-      </p>
-      <p className="sky-phase">
+      <p className="sky-line">
         <b style={{ color: PHASE_INK[phase] }}>{info.name}</b>
         {info.effect}
       </p>
-      <p className="note" title={`${next.name}：${next.effect}`}>
-        再{chineseNumber(roundsLeftInPhase(sky))}輪轉入{next.name}
+      <p className="note sky-note" title={`${next.name}：${next.effect}`}>
+        {mansionAt(sky)}宿{"　"}第{chineseNumber(round + 1)}輪{"　"}再
+        {chineseNumber(roundsLeftInPhase(sky))}輪轉入{next.name}
       </p>
     </section>
   );
@@ -146,6 +144,7 @@ export function GameView({
   }, []);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const settings = useSettings();
 
   const { pieces, turn: currentSide } = game;
   const selected = pieces.find((p) => p.id === selectedId) ?? null;
@@ -174,6 +173,28 @@ export function GameView({
   // 正在看的局面之後下一步所在的輪
   const shownRound = reviewing ? game.history[shownIndex].round : game.round;
 
+  // 左上的選單（回大廳、重新開始…）。還沒動過（null）時：下到一半結束就自動打開，讓「再來一局」看得到；
+  // 一打開就已經結束的（看棋譜）不自動打開
+  const [menuOpen, setMenuOpen] = useState<boolean | null>(null);
+  const [openedFinished] = useState(game.turn === null);
+  const showMenu = !!controls && (menuOpen ?? (game.turn === null && !openedFinished));
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showMenu) return;
+    const onDown = (e: PointerEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    window.addEventListener("pointerdown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [showMenu]);
+
   useEffect(() => {
     onReviewingChange?.(reviewing);
   }, [reviewing, onReviewingChange]);
@@ -183,13 +204,14 @@ export function GameView({
     setViewIndex(index >= total ? null : Math.max(0, index));
   };
 
-  // 鍵盤 ← → 翻棋譜。棋譜由右往左排，所以 ← 是較新的一步、→ 是較早的一步
+  // 鍵盤 ← → 翻棋譜。棋譜由右往左排，所以預設 ← 是較新的一步、→ 是較早的一步；設定裡可以反過來
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // 在聊天輸入框裡按方向鍵是移動游標，不是翻棋譜
       if (e.target instanceof HTMLInputElement) return;
-      if (e.key === "ArrowLeft") goTo(shownIndex + 1);
-      else if (e.key === "ArrowRight") goTo(shownIndex - 1);
+      const step = settings.arrowLeftIsNext ? 1 : -1;
+      if (e.key === "ArrowLeft") goTo(shownIndex + step);
+      else if (e.key === "ArrowRight") goTo(shownIndex - step);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -264,7 +286,7 @@ export function GameView({
   const sideRoom = size.w >= 900 ? Math.min(270, Math.round((size.w - 760) / 2)) : 0;
   const reserve =
     size.w < 760
-      ? { left: 0, right: 0, top: Math.round(Math.min(430, size.h * 0.5)), bottom: 64 }
+      ? { left: 0, right: 0, top: Math.round(Math.min(320, size.h * 0.4)), bottom: 64 }
       : { left: sideRoom, right: sideRoom, top: 12, bottom: 12 };
 
   return (
@@ -276,76 +298,85 @@ export function GameView({
           me={me}
           pieces={shownPieces}
           selectedId={selectedId}
-          targets={reviewing ? [] : targets}
-          shownMove={shownMove}
+          targets={reviewing || !settings.showTargets ? [] : targets}
+          shownMove={settings.showLastMove ? shownMove : undefined}
           reserve={reserve}
+          territory={settings.showTerritory}
           onPick={handlePick}
         />
       </div>
 
-      {/* 左上：輪到誰、將軍、天象、時間、操作 */}
+      {/* 左上：選單、輪到誰、將軍、天象、時間 */}
       <aside className="game-status">
-        <TurnHeader game={game} seatName={seatName} turnNote={turnNote} />
+        <div className="status-head">
+          {controls && (
+            <div className="game-menu" ref={menuRef}>
+              <button
+                className="menu-button"
+                onClick={() => setMenuOpen(!showMenu)}
+                aria-expanded={showMenu}
+                aria-label="選單"
+                title="選單"
+              >
+                <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden>
+                  <path d="M3 5H19M3 11H19M3 17H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              </button>
+              {showMenu && <div className="game-controls">{controls}</div>}
+            </div>
+          )}
+          <TurnHeader game={game} seatName={seatName} turnNote={turnNote} />
+        </div>
 
-        {(checked.length > 0 || game.skipped.length > 0 || game.alive.length < TURN_ORDER.length) && (
-          <div className="alerts">
-            {checked.length > 0 && !game.winner && (
-              <p className="alert-check">將軍：{sideList(checked)}</p>
-            )}
-            {game.skipped.length > 0 && (
-              <p className="alert-quiet">{sideList(game.skipped)}無棋可走，跳過</p>
-            )}
-            {game.alive.length < TURN_ORDER.length && (
-              <p className="alert-quiet">
+        {/* 固定一行高（沒事就空著，下面才不會跳動）：這一步的將軍、跳過；沒事時寫誰出局 */}
+        <p className="alerts">
+          {checked.length > 0 && !game.winner && (
+            <span className="alert-check">將軍：{sideList(checked)}{"　"}</span>
+          )}
+          {game.skipped.length > 0 && (
+            <span className="alert-quiet">{sideList(game.skipped)}無棋可走，跳過</span>
+          )}
+          {!(checked.length > 0 && !game.winner) &&
+            game.skipped.length === 0 &&
+            game.alive.length < TURN_ORDER.length && (
+              <span className="alert-quiet">
                 出局：{sideList(TURN_ORDER.filter((s) => !game.alive.includes(s)))}
-              </p>
+              </span>
             )}
-          </div>
-        )}
+        </p>
 
-        {game.celestial && (
-          <>
-            <hr className="fold-rule" />
-            <SkyStatus round={shownRound} sky={game.skyStart + shownRound} />
-          </>
-        )}
+        {(game.celestial || clock) && <hr className="fold-rule" />}
+        {game.celestial && <SkySummary round={shownRound} sky={game.skyStart + shownRound} />}
 
+        {/* 三家時間一行；滑鼠移上去看是誰。出局的那家變淡 */}
         {clock && (
-          <>
-            <hr className="fold-rule" />
-            <ul className="clocks">
-              {TURN_ORDER.map((side) => {
-                const left = timeLeft(clock, side, currentSide, now);
-                const active = side === currentSide;
-                const byoyomi = left.main <= 0;
-                const out = !game.alive.includes(side);
-                return (
-                  <li key={side} className={out ? "out" : active ? "active" : undefined}>
-                    <SideSeal side={side} />
-                    <span className="who">{seatName(side)}</span>
-                    <span
-                      className="time"
-                      style={
-                        byoyomi && active && left.byoyomi <= CLOCK_WARN_MS
-                          ? { color: "var(--vermilion)", fontWeight: 700 }
-                          : undefined
-                      }
-                    >
-                      {byoyomi ? `讀秒 ${formatTime(left.byoyomi)}` : formatTime(left.main)}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-            {clock.pausedAt !== null && <p className="note">回放中，計時暫停</p>}
-          </>
-        )}
-
-        {controls && (
-          <>
-            <hr className="fold-rule" />
-            <div className="game-controls">{controls}</div>
-          </>
+          <ul className="clocks">
+            {TURN_ORDER.map((side) => {
+              const left = timeLeft(clock, side, currentSide, now);
+              const active = side === currentSide;
+              const byoyomi = left.main <= 0;
+              const out = !game.alive.includes(side);
+              return (
+                <li
+                  key={side}
+                  className={out ? "out" : active ? "active" : undefined}
+                  title={`${seatName(side)}${byoyomi ? "（讀秒）" : ""}`}
+                >
+                  <SideSeal side={side} />
+                  <span
+                    className="time"
+                    style={
+                      byoyomi && active && left.byoyomi <= CLOCK_WARN_MS
+                        ? { fontWeight: 700 }
+                        : undefined
+                    }
+                  >
+                    {formatTime(byoyomi ? left.byoyomi : left.main)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </aside>
 
@@ -376,7 +407,7 @@ export function GameView({
             </li>
           ))}
         </ol>
-        {/* 往左是較新的步，往右是較早的步（鍵盤 ← → 也一樣） */}
+        {/* 往左是較新的步，往右是較早的步（鍵盤 ← → 預設也一樣，設定裡可以反過來） */}
         <nav className="move-nav">
           <button onClick={() => goTo(total)} disabled={!reviewing} title="最新" aria-label="最新">
             <NavIcon d="M3 3V17M17 3L6 10L17 17Z" />
@@ -428,6 +459,9 @@ function TurnHeader({
   if (!side) {
     return (
       <div className="turn">
+        <span className="side-seal" style={{ background: "var(--grey-ink)" }} aria-hidden>
+          和
+        </span>
         <div>
           <p className="turn-main">和局</p>
           <p className="turn-sub">
@@ -448,7 +482,8 @@ function TurnHeader({
         <p className="turn-main" style={game.winner ? { color: SIDE_INK[side] } : undefined}>
           {game.winner ? `${short}獲勝` : short}
         </p>
-        {sub && <p className="turn-sub">{sub}</p>}
+        {/* 第二行一直留著（沒字就空白），「電腦思考中…」出現消失時下面才不會跳 */}
+        <p className="turn-sub">{sub || " "}</p>
       </div>
     </div>
   );

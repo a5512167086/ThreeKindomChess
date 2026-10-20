@@ -197,6 +197,7 @@ type WarpedPanelProps = {
   targets: Pos[]; // 選中棋子在這片面板上的合法落點
   lastFrom?: Pos; // 正在看的那一步的起點（在這片面板上才有）
   lastTo?: Pos; // 正在看的那一步的終點（在這片面板上才有）
+  territory: boolean; // 地盤要不要塗底色
   onPick: (pos: Pos) => void;
 };
 
@@ -208,6 +209,7 @@ function WarpedPanel({
   targets,
   lastFrom,
   lastTo,
+  territory,
   onPick,
 }: WarpedPanelProps) {
   const { verticals, horizontals, crosses, gridPoints } = useMemo(() => {
@@ -328,14 +330,16 @@ function WarpedPanel({
 
   return (
     <Group>
-      {/* 地盤：一層淡淡的己方顏色 */}
-      <Line
-        points={PANEL_OUTLINE}
-        closed
-        fill={SIDE_INK[panelTag]}
-        opacity={TERRITORY_OPACITY}
-        listening={false}
-      />
+      {/* 地盤：一層淡淡的己方顏色（設定裡可以關掉） */}
+      {territory && (
+        <Line
+          points={PANEL_OUTLINE}
+          closed
+          fill={SIDE_INK[panelTag]}
+          opacity={TERRITORY_OPACITY}
+          listening={false}
+        />
+      )}
       {horizontals}
       {verticals}
       {crosses}
@@ -482,6 +486,7 @@ type BoardProps = {
   targets: Pos[];
   shownMove?: { from: Pos; to: Pos }; // 要標示的那一步
   reserve?: Reserve; // 四周留給其他東西的空間
+  territory?: boolean; // 地盤要不要塗底色
   onPick: (pos: Pos) => void;
 };
 
@@ -512,6 +517,7 @@ export function Board({
   targets,
   shownMove,
   reserve = NO_RESERVE,
+  territory = true,
   onPick,
 }: BoardProps) {
   const fontReady = usePieceFont();
@@ -530,6 +536,7 @@ export function Board({
     targets: targets.filter((t) => t.panel === panel),
     lastFrom: shownMove?.from.panel === panel ? shownMove.from : undefined,
     lastTo: shownMove?.to.panel === panel ? shownMove.to : undefined,
+    territory,
     onPick,
   });
 

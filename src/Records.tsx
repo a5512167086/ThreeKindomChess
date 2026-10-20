@@ -8,15 +8,20 @@ import {
   type GameRecord,
   type GameSummary,
   type GamesResponse,
+  type PaymentProvider,
   type Plan,
+  type RatingChange,
   type ReplayQuota,
   type SubscriptionInfo,
+  PAYMENT_NAMES,
   PLAN_NAMES,
+  formatPrice,
 } from "./protocol";
-import { fakeCancel, fakeSubscribe, fetchGames, openGame } from "./net";
+import { checkout, fakeCancel, fakeSubscribe, fetchGames, openGame } from "./net";
 import { GameView } from "./GameView";
 import { Panel } from "./OnlineGame";
 import { PANEL_COLORS, sideName } from "./sides";
+import { rankOf } from "./rank";
 
 const formatTime = (iso: string) =>
   new Date(iso).toLocaleString("zh-TW", { dateStyle: "medium", timeStyle: "short" });
@@ -47,12 +52,19 @@ function quotaText(q: ReplayQuota) {
 
 type Props = {
   subscription: SubscriptionInfo | null;
+  payments: PaymentProvider[];
   fakeBilling: boolean;
   onSubscriptionChange: (s: SubscriptionInfo | null) => void;
   onExit: () => void;
 };
 
-export function RecordsPage({ subscription, fakeBilling, onSubscriptionChange, onExit }: Props) {
+export function RecordsPage({
+  subscription,
+  payments,
+  fakeBilling,
+  onSubscriptionChange,
+  onExit,
+}: Props) {
   // undefined：讀取中；null：讀取失敗
   const [data, setData] = useState<GamesResponse | null | undefined>(undefined);
   const [viewing, setViewing] = useState<GameRecord | null>(null);
@@ -91,7 +103,17 @@ export function RecordsPage({ subscription, fakeBilling, onSubscriptionChange, o
     }
   };
 
-  const changeSubscription = async (action: Plan | "cancel") => {
+  // 成功的話整頁會離開去付款頁，所以不用把 busy 改回來
+  const pay = async (plan: Plan, provider: PaymentProvider) => {
+    setBusy(true);
+    setNotice(null);
+    if (!(await checkout(plan, provider))) {
+      setBusy(false);
+      setNotice("打不開付款頁，請再試一次");
+    }
+  };
+
+  const fakeChange = async (action: Plan | "cancel") => {
     setBusy(true);
     const next = action === "cancel" ? ((await fakeCancel()) ? null : undefined) : await fakeSubscribe(action);
     setBusy(false);
@@ -113,9 +135,11 @@ export function RecordsPage({ subscription, fakeBilling, onSubscriptionChange, o
 
       <SubscriptionBox
         subscription={subscription}
+        payments={payments}
         fakeBilling={fakeBilling}
         busy={busy}
-        onChange={changeSubscription}
+        onPay={pay}
+        onFake={fakeChange}
       />
 
       {data && <p style={{ margin: "12px 0", color: "#cbd5e1" }}>{quotaText(data.quota)}</p>}
@@ -149,6 +173,7 @@ export function RecordsPage({ subscription, fakeBilling, onSubscriptionChange, o
                     <span style={{ color: result.color, fontWeight: "bold", marginLeft: 8 }}>
                       {result.text}
                     </span>
+                    {g.rating && <RatingDiff change={g.rating} />}
                     <span style={{ color: "#94a3b8", marginLeft: 8, fontSize: 13 }}>
                       {formatTime(g.finishedAt)}・{g.moveCount} 步
                     </span>
@@ -167,16 +192,37 @@ export function RecordsPage({ subscription, fakeBilling, onSubscriptionChange, o
   );
 }
 
+// 積分對局：這局加減多少分
+function RatingDiff({ change }: { change: RatingChange }) {
+  const diff = change.after - change.before;
+  return (
+    <span
+      style={{ marginLeft: 8, fontSize: 13, color: diff >= 0 ? "#4ade80" : "#f87171" }}
+      title={`積分 ${change.before} → ${change.after}（${rankOf(change.after).label}）`}
+    >
+      積分 {diff >= 0 ? `+${diff}` : diff}
+    </span>
+  );
+}
+
+const PLANS = Object.keys(PLAN_NAMES) as Plan[];
+
+// 訂閱狀態與購買按鈕：每個金流一排（藍新收台幣、PayPal 收美金）。
+// 不會自動續扣，訂閱中再買就從原本的到期日往後延
 function SubscriptionBox({
   subscription,
+  payments,
   fakeBilling,
   busy,
-  onChange,
+  onPay,
+  onFake,
 }: {
   subscription: SubscriptionInfo | null;
+  payments: PaymentProvider[];
   fakeBilling: boolean;
   busy: boolean;
-  onChange: (action: Plan | "cancel") => void;
+  onPay: (plan: Plan, provider: PaymentProvider) => void;
+  onFake: (action: Plan | "cancel") => void;
 }) {
   const box = {
     padding: 12,
@@ -184,40 +230,56 @@ function SubscriptionBox({
     border: "1px solid #334155",
     background: "#0b1324",
   } as const;
-
-  if (subscription) {
-    return (
-      <div style={{ ...box, display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{ flex: 1 }}>
-          <strong style={{ color: "#facc15" }}>{PLAN_NAMES[subscription.plan]}</strong>
-          ：訂閱到 {formatDate(subscription.until)}
-        </div>
-        {fakeBilling && (
-          <button disabled={busy} onClick={() => onChange("cancel")}>
-            取消（測試）
-          </button>
-        )}
-      </div>
-    );
-  }
+  const row = { display: "flex", alignItems: "center", gap: 8, marginTop: 8, flexWrap: "wrap" } as const;
+  const label = { width: 150, fontSize: 13, color: "#94a3b8" } as const;
 
   return (
     <div style={box}>
-      <div style={{ marginBottom: 8 }}>訂閱後，看自己的棋譜不限次數</div>
-      <div style={{ display: "flex", gap: 8 }}>
-        {(Object.keys(PLAN_NAMES) as Plan[]).map((plan) => (
-          <button
-            key={plan}
-            style={{ flex: 1 }}
-            disabled={!fakeBilling || busy}
-            onClick={() => onChange(plan)}
-          >
-            {PLAN_NAMES[plan]}
-            {fakeBilling && "（測試，不收費）"}
-          </button>
-        ))}
-      </div>
-      {!fakeBilling && (
+      {subscription ? (
+        <div>
+          <strong style={{ color: "#facc15" }}>{PLAN_NAMES[subscription.plan]}</strong>
+          ：訂閱到 {formatDate(subscription.until)}
+          {payments.length > 0 && (
+            <span style={{ fontSize: 13, color: "#94a3b8" }}>（不會自動扣款，再買一期會往後延）</span>
+          )}
+        </div>
+      ) : (
+        <div>訂閱後，看自己的棋譜不限次數</div>
+      )}
+
+      {payments.map((provider) => (
+        <div key={provider} style={row}>
+          <span style={label}>{PAYMENT_NAMES[provider]}</span>
+          {PLANS.map((plan) => (
+            <button
+              key={plan}
+              style={{ flex: 1 }}
+              disabled={busy}
+              onClick={() => onPay(plan, provider)}
+            >
+              {PLAN_NAMES[plan]} {formatPrice(provider, plan)}
+            </button>
+          ))}
+        </div>
+      ))}
+
+      {fakeBilling && (
+        <div style={row}>
+          <span style={label}>開發用（不收費）</span>
+          {PLANS.map((plan) => (
+            <button key={plan} style={{ flex: 1 }} disabled={busy} onClick={() => onFake(plan)}>
+              {PLAN_NAMES[plan]}
+            </button>
+          ))}
+          {subscription && (
+            <button disabled={busy} onClick={() => onFake("cancel")}>
+              取消訂閱
+            </button>
+          )}
+        </div>
+      )}
+
+      {!subscription && !payments.length && !fakeBilling && (
         <div style={{ marginTop: 8, fontSize: 13, color: "#94a3b8" }}>付款功能準備中</div>
       )}
     </div>

@@ -15,7 +15,7 @@ import {
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
-import type { DrawReason, MoveMsg, Plan, RecordSeat } from "../src/protocol";
+import type { DrawReason, MoveMsg, PaymentProvider, Plan, RecordSeat } from "../src/protocol";
 import type { Side } from "../src/rules";
 
 const createdAt = () =>
@@ -25,6 +25,8 @@ export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   displayName: text("display_name").notNull(),
   avatarUrl: text("avatar_url"),
+  rating: integer("rating").notNull().default(0), // 積分（見 src/rank.ts）
+  ratedGames: integer("rated_games").notNull().default(0), // 下過幾局積分對局
   createdAt: createdAt(),
 });
 
@@ -62,6 +64,7 @@ export const games = pgTable("games", {
   seats: jsonb("seats").$type<Record<Side, RecordSeat>>().notNull(), // 開局時三家各是誰
   winner: text("winner").$type<Side>(),
   drawReason: text("draw_reason").$type<DrawReason>(),
+  rated: boolean("rated").notNull().default(false), // 積分配對的局
   startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
   finishedAt: timestamp("finished_at", { withTimezone: true }).notNull(),
 });
@@ -77,6 +80,10 @@ export const gamePlayers = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     side: text("side").$type<Side>().notNull(),
+    place: integer("place"), // 第幾名（1 起算，同名次同數字）；這個欄位加進來之前的舊局是空的
+    // 積分對局才有：這局前後的積分
+    ratingBefore: integer("rating_before"),
+    ratingAfter: integer("rating_after"),
   },
   (t) => [
     primaryKey({ columns: [t.gameId, t.userId] }),
@@ -108,8 +115,29 @@ export const subscriptions = pgTable("subscriptions", {
     .primaryKey()
     .references(() => users.id, { onDelete: "cascade" }),
   plan: text("plan").$type<Plan>().notNull(),
-  provider: text("provider").notNull(), // 目前只有 "fake"（開發用），之後接金流再加
-  providerRef: text("provider_ref"), // 金流那邊的訂閱編號
+  provider: text("provider").notNull(), // 最後一次付款用的金流："newebpay"、"paypal"，或開發用的 "fake"
+  providerRef: text("provider_ref"), // 那次付款在金流那邊的交易編號
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// 每次付款一筆。status 從 pending 變成 paid 的那一次才延長訂閱，
+// 金流重複通知（背景通知加上瀏覽器導回來）也只會延一期
+export const payments = pgTable(
+  "payments",
+  {
+    id: text("id").primaryKey(), // 我們的訂單編號（藍新的 MerchantOrderNo、PayPal 的 custom_id）
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    plan: text("plan").$type<Plan>().notNull(),
+    provider: text("provider").$type<PaymentProvider>().notNull(),
+    amount: text("amount").notNull(), // 例如 "99"、"3.49"
+    currency: text("currency").notNull(),
+    providerRef: text("provider_ref"), // 藍新的 TradeNo；PayPal 的 order id（建立訂單時就有）
+    status: text("status").$type<"pending" | "paid" | "failed">().notNull().default("pending"),
+    createdAt: createdAt(),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+  },
+  (t) => [index("payments_provider_ref_idx").on(t.provider, t.providerRef)]
+);

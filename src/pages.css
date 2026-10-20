@@ -1,0 +1,268 @@
+/* 個人資料、設定這類的內頁：宣紙底，右邊一欄直書標題（跟大廳一樣由右往左讀），內容橫排 */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--song);
+}
+.sheet-inner {
+  display: flex;
+  flex-direction: row-reverse;
+  gap: 48px;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: clamp(48px, 12vh, 112px) 32px 64px;
+}
+.sheet-title {
+  flex: none;
+  margin: 0;
+  padding-left: 28px;
+  border-left: 1px solid var(--fold);
+  writing-mode: vertical-rl;
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: clamp(30px, 4.4vh, 40px);
+  letter-spacing: 0.16em;
+}
+.sheet-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+.sheet-back {
+  position: fixed;
+  top: 28px;
+  left: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 17px;
+  cursor: pointer;
+}
+.sheet-back:hover {
+  color: var(--vermilion);
+}
+.sheet button:focus-visible,
+.sheet input:focus-visible,
+.sheet a:focus-visible {
+  outline: 2px dashed var(--vermilion);
+  outline-offset: 3px;
+}
+.sheet p {
+  margin: 0;
+}
+.sheet .note {
+  font-size: 13px;
+  color: var(--grey-ink);
+}
+.sheet-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 24px;
+  border-top: 1px solid var(--fold);
+}
+.sheet-section:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.sheet-section h2 {
+  margin: 0;
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: 0.06em;
+}
+.sheet-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--vermilion);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+/* ---- 個人資料 ---- */
+
+.profile-who {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.profile-who img {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.profile-name {
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 24px;
+}
+
+/* 段位：朱紅方印裡直書段位名，旁邊是大大的Ⅰ/Ⅱ/Ⅲ */
+.rank {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.rank-seal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 4px;
+  background: var(--vermilion);
+  color: var(--ivory);
+  writing-mode: vertical-rl;
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 26px;
+  line-height: 1.05;
+  letter-spacing: 0.04em;
+}
+.rank-division {
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 44px;
+  line-height: 1;
+}
+.rank-points {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.rank-points b {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.progress {
+  height: 6px;
+  border-radius: 3px;
+  background: rgb(110 102 86 / 0.2);
+  overflow: hidden;
+}
+.progress > span {
+  display: block;
+  height: 100%;
+  background: var(--vermilion);
+}
+
+/* 戰績：一列一個數字 */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+.stats div {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+}
+.stats dt {
+  font-size: 13px;
+  color: var(--grey-ink);
+}
+.stats dd {
+  margin: 0;
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 26px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- 設定 ---- */
+
+.field {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+.field input[type="text"] {
+  width: min(240px, 100%);
+  padding: 6px 0;
+  border: 0;
+  border-bottom: 1px solid rgb(42 42 42 / 0.7);
+  background: none;
+  font: inherit;
+  font-size: 17px;
+  color: var(--ink);
+}
+.field input[type="text"]:focus {
+  outline: none;
+  border-color: var(--vermilion);
+}
+.sheet-button {
+  padding: 6px 14px;
+  border: 1px solid var(--ink);
+  border-radius: 3px;
+  background: none;
+  color: var(--ink);
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+}
+.sheet-button:hover:not(:disabled) {
+  border-color: var(--vermilion);
+  color: var(--vermilion);
+}
+.sheet-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+.choice input {
+  margin: 4px 0 0;
+  accent-color: var(--vermilion);
+}
+.choice span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+@media (max-width: 640px) {
+  .sheet-inner {
+    flex-direction: column;
+    gap: 24px;
+    padding: 72px 16px 48px;
+  }
+  .sheet-title {
+    writing-mode: horizontal-tb;
+    padding: 0 0 12px;
+    border-left: 0;
+    border-bottom: 1px solid var(--fold);
+    font-size: 28px;
+  }
+  .sheet-back {
+    top: 16px;
+    left: 12px;
+  }
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

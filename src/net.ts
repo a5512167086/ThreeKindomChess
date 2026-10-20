@@ -2,13 +2,16 @@
 
 import { io, type Socket } from "socket.io-client";
 import type {
+  CheckoutResponse,
   ClientToServerEvents,
   GamesResponse,
   HandshakeAuth,
   LoginProvider,
   MeResponse,
   OpenGameResponse,
+  PaymentProvider,
   Plan,
+  ProfileResponse,
   ReplayQuota,
   ServerToClientEvents,
   SubscriptionInfo,
@@ -125,6 +128,29 @@ export async function openGame(
   return { kind: "error" };
 }
 
+// 開始付款：成功就離開這個網站去付款頁（藍新用表單 POST、PayPal 直接轉址）；失敗回傳 false
+export async function checkout(plan: Plan, provider: PaymentProvider): Promise<boolean> {
+  const { status, data } = await post<CheckoutResponse>("/api/billing/checkout", { plan, provider });
+  if (status !== 200 || !data) return false;
+  if (data.kind === "redirect") {
+    location.assign(data.url);
+    return true;
+  }
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = data.action;
+  for (const [name, value] of Object.entries(data.fields)) {
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = name;
+    input.value = value;
+    form.append(input);
+  }
+  document.body.append(form);
+  form.submit();
+  return true;
+}
+
 // 開發用的假訂閱；失敗回傳 undefined
 export async function fakeSubscribe(plan: Plan): Promise<SubscriptionInfo | null | undefined> {
   const { status, data } = await post<{ subscription: SubscriptionInfo | null }>(
@@ -142,4 +168,21 @@ export async function fakeCancel(): Promise<boolean> {
 export function connect(name: string): GameSocket {
   const auth: HandshakeAuth = { playerId: playerId(), name };
   return io({ auth });
+}
+
+// ---- 個人資料（要登入）----
+
+export async function fetchProfile(): Promise<ProfileResponse | null> {
+  try {
+    const res = await fetch("/api/profile", { credentials: "same-origin" });
+    return res.ok ? ((await res.json()) as ProfileResponse) : null;
+  } catch {
+    return null;
+  }
+}
+
+// 改帳號的暱稱；成功回傳存下來的名字
+export async function renameMe(name: string): Promise<string | null> {
+  const { status, data } = await post<{ name: string }>("/api/profile/name", { name });
+  return status === 200 && data ? data.name : null;
 }

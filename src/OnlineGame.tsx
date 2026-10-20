@@ -6,11 +6,12 @@
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import type { Side } from "./rules";
 import { type GameState, TURN_ORDER, play, replay } from "./game";
-import { type ChatMessage, type RoomView, ROOM_SIZE } from "./protocol";
+import { type ChatMessage, type RatingChange, type RoomView, ROOM_SIZE } from "./protocol";
 import { type GameSocket, connect, saveRoom } from "./net";
 import { type Clock, fromClockView } from "./clock";
 import { GameView } from "./GameView";
 import { SIDE_INK, sideName } from "./sides";
+import { rankOf } from "./rank";
 
 export type OnlineAction =
   | { type: "create" }
@@ -23,11 +24,15 @@ const ERROR_SHOW_MS = 3000;
 export function OnlineGame({
   name,
   action,
+  rating,
   onExit,
+  onRematch,
 }: {
   name: string;
   action: OnlineAction;
+  rating: number | null; // 自己的積分（排積分配對時顯示段位）
   onExit: (notice?: string) => void;
+  onRematch: () => void; // 積分對局結束後再排一次
 }) {
   const [me, setMe] = useState<string | null>(null); // 伺服器給的公開代號
   const socketRef = useRef<GameSocket | null>(null);
@@ -136,6 +141,11 @@ export function OnlineGame({
     saveRoom(null);
     onExit();
   };
+  const rematch = () => {
+    socketRef.current?.emit("room:leave");
+    saveRoom(null);
+    onRematch();
+  };
 
   const errorToast = error && (
     <div
@@ -171,9 +181,14 @@ export function OnlineGame({
         {errorToast}
         {matching !== null ? (
           <>
-            <h2 style={{ marginTop: 0 }}>自動配對中…</h2>
+            <h2 style={{ marginTop: 0 }}>積分配對中…</h2>
+            {rating !== null && (
+              <p>
+                你是{rankOf(rating).label}（{rating} 分）
+              </p>
+            )}
             <p>
-              目前排隊 {matching} / {ROOM_SIZE} 人，湊滿就會自動開局
+              目前有 {matching} 人在排。會先找分數相近的對手，等越久範圍放越寬
             </p>
             <button
               onClick={() => {
@@ -219,7 +234,8 @@ export function OnlineGame({
     const seat = seats[side];
     if (seat.kind === "ai") return `${sideName(side)}（電腦）`;
     const who = seat.playerId === me ? "你" : seat.name;
-    return `${sideName(side)}（${who}${seat.online ? "" : "・離線"}）`;
+    const rank = seat.rating === null ? "" : `，${rankOf(seat.rating).label}`;
+    return `${sideName(side)}（${who}${rank}${seat.online ? "" : "，離線"}）`;
   };
 
   const turnSeat = game.turn ? seats[game.turn] : null;
@@ -265,9 +281,16 @@ export function OnlineGame({
                 </>
               )}
             </p>
+            {room.rated && room.status === "finished" && (
+              <RatingResult change={mySeat ? room.ratingChanges?.[mySeat] : undefined} pending={!room.ratingChanges} />
+            )}
             <div className="row">
               <button onClick={leave}>離開房間</button>
+              {room.status === "finished" && room.rated && (
+                <button onClick={rematch}>再配一局</button>
+              )}
               {room.status === "finished" &&
+                !room.rated &&
                 (isHost ? (
                   <button
                     onClick={() => socketRef.current?.emit("room:start", report)}
@@ -282,6 +305,37 @@ export function OnlineGame({
         }
       />
     </>
+  );
+}
+
+// 積分對局結束：這局加減多少分、有沒有升降段
+function RatingResult({
+  change,
+  pending,
+}: {
+  change: RatingChange | undefined;
+  pending: boolean;
+}) {
+  if (pending) return <p className="note">算分中…</p>;
+  if (!change) return null;
+  const diff = change.after - change.before;
+  const before = rankOf(change.before);
+  const after = rankOf(change.after);
+  const moved = before.label !== after.label;
+  return (
+    <p>
+      積分 {change.before} → {change.after}
+      <span style={{ color: diff >= 0 ? "var(--green)" : "var(--vermilion)", marginLeft: 6 }}>
+        {diff >= 0 ? `+${diff}` : diff}
+      </span>
+      {moved && (
+        <>
+          <br />
+          {change.after > change.before ? "升上" : "降到"}
+          {after.label}
+        </>
+      )}
+    </p>
   );
 }
 

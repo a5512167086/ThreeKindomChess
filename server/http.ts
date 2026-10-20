@@ -24,8 +24,7 @@ export const fromOwnSite = (req: IncomingMessage, publicOrigin: string) => {
   return !origin || origin === publicOrigin;
 };
 
-// 讀 JSON 內容；太大或格式不對回傳 null
-export async function readJson(req: IncomingMessage): Promise<unknown> {
+async function readBody(req: IncomingMessage): Promise<string | null> {
   let size = 0;
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
@@ -33,10 +32,23 @@ export async function readJson(req: IncomingMessage): Promise<unknown> {
     if (size > MAX_BODY_BYTES) return null;
     chunks.push(chunk as Buffer);
   }
-  if (!chunks.length) return {};
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+// 讀 JSON 內容；太大或格式不對回傳 null
+export async function readJson(req: IncomingMessage): Promise<unknown> {
+  const text = await readBody(req);
+  if (text === null) return null;
+  if (!text) return {};
   try {
-    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    return JSON.parse(text);
   } catch {
     return null;
   }
+}
+
+// 讀表單內容（application/x-www-form-urlencoded，例如金流的通知）；太大回傳 null
+export async function readForm(req: IncomingMessage): Promise<URLSearchParams | null> {
+  const text = await readBody(req);
+  return text === null ? null : new URLSearchParams(text);
 }

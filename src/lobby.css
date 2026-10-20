@@ -97,6 +97,12 @@
   align-items: center;
   gap: 24px;
 }
+/* 個人資料底下的小字：我的棋譜、登出，由右往左並排 */
+.account-links {
+  display: flex;
+  flex-direction: row-reverse;
+  gap: 14px;
+}
 .action-small {
   writing-mode: vertical-rl;
   padding: 4px;
@@ -136,36 +142,13 @@
   letter-spacing: 0.2em;
   color: var(--ink);
 }
-.code-input::placeholder,
-.nickname input::placeholder {
+.code-input::placeholder {
   color: var(--grey-ink);
   opacity: 1;
 }
-.code-input:focus,
-.nickname input:focus {
+.code-input:focus {
   outline: none;
   border-color: var(--vermilion);
-}
-
-.nickname {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: min(150px, 85%);
-  font-family: var(--kai);
-  font-weight: 700;
-  font-size: 22px;
-}
-.nickname input {
-  width: 100%;
-  padding: 6px 0;
-  border: 0;
-  border-bottom: 1px solid rgb(42 42 42 / 0.7);
-  background: none;
-  font-family: var(--song);
-  font-weight: 400;
-  font-size: 16px;
-  color: var(--ink);
 }
 
 .notice {
@@ -354,4 +337,10 @@
   .colophon {
     transition: none;
   }
+}
+
+/* 直書裡的阿拉伯數字（積分）一個一個直立排，不要躺著 */
+.upright {
+  text-orientation: upright;
+  letter-spacing: -0.1em;
 }

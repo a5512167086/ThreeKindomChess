@@ -22,6 +22,27 @@
       "when": 1792446365084,
       "tag": "0002_sky_start",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792457825247,
+      "tag": "0003_ratings",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792461968179,
+      "tag": "0004_player_place",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792486365597,
+      "tag": "0005_payments",
+      "breakpoints": true
     }
   ]
 }

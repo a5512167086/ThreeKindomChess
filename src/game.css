@@ -47,28 +47,71 @@
   line-height: 1;
 }
 
-/* ---- 左上：狀態 ---- */
+/* ---- 左上：選單、狀態 ---- */
 
 .game-status {
   position: absolute;
   top: 36px;
   left: 36px;
-  z-index: 1;
-  width: 220px;
+  z-index: 2; /* 選單打開時要蓋過棋盤和棋譜 */
+  width: 230px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 10px;
+  /* 行高寫死：有些宿名楷體沒有、會換成別的字型，行高跟著變就會讓下面上下跳 */
+  line-height: 1.5;
   pointer-events: none; /* 讓點擊穿過空白處到棋盤 */
 }
 .game-status > * {
   pointer-events: auto;
 }
 
+.status-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* 三條槓選單：點開是一張便箋，放回大廳、重新開始這些不常按的 */
+.game-menu {
+  position: relative;
+  flex: none;
+}
+.menu-button {
+  display: flex;
+  padding: 4px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+.menu-button:hover,
+.menu-button[aria-expanded="true"] {
+  color: var(--vermilion);
+}
+.game-menu .game-controls {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 3; /* 下面變淡的時間會自成一層，要壓過它們 */
+  width: 264px;
+  box-sizing: border-box;
+  padding: 16px;
+  background: rgb(244 238 223 / 0.98);
+  border: 1px solid var(--fold);
+  box-shadow: 0 3px 10px rgb(64 46 20 / 0.18);
+}
+
 .turn {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
   --seal-size: 36px;
+}
+.turn > div {
+  min-width: 0;
 }
 .turn-main {
   font-family: var(--kai);
@@ -81,10 +124,17 @@
   color: var(--grey-ink);
 }
 
+/* 每行固定高、不折行：有沒有字都佔一樣的位置 */
+.alerts,
+.turn-sub,
+.sky-line,
+.sky-note {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .alerts {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  height: 1.5em;
   font-size: 14px;
 }
 .alert-check {
@@ -98,67 +148,51 @@
 .sky {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
-.sky-label {
-  font-family: var(--kai);
-  font-size: 14px;
-  color: var(--grey-ink);
-}
-.sky-mansion {
-  font-family: var(--kai);
-  font-weight: 700;
-  font-size: 22px;
-  letter-spacing: 0.04em;
-}
-.sky-phase {
+.sky-line {
+  height: 1.5em;
   font-size: 14px;
 }
-.sky-phase b {
+.sky-line b {
   font-family: var(--kai);
-  font-size: 17px;
+  font-size: 16px;
   margin-right: 8px;
 }
+.sky-note {
+  height: 1.5em;
+}
 
+/* 三家時間一行 */
 .clocks {
   list-style: none;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  gap: 16px;
   font-size: 14px;
   font-variant-numeric: tabular-nums;
+  --seal-size: 20px;
 }
 .clocks li {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 5px;
   opacity: 0.75;
 }
 .clocks li.active {
   opacity: 1;
 }
-.clocks li.out {
-  opacity: 0.35;
-}
-.clocks .who {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.clocks .time {
-  font-size: 15px;
-}
 .clocks li.active .time {
   color: var(--vermilion);
+}
+.clocks li.out {
+  opacity: 0.35;
 }
 
 /* 各畫面自己放的操作（重新開始、回大廳、電腦下哪幾家…） */
 .game-controls {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   font-size: 14px;
 }
 .game-controls button {
@@ -181,16 +215,17 @@
 .game-controls .row {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 18px;
+  gap: 4px 12px;
   align-items: center;
 }
 .game-controls label {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   cursor: pointer;
 }
 .game-controls input[type="checkbox"] {
+  margin: 0;
   accent-color: var(--vermilion);
 }
 
@@ -261,10 +296,17 @@
   color: var(--grey-ink);
   font-size: 13px;
 }
+/* 步數固定五個字高（最長「九百九十九」），後面的方色和記譜才會每欄對齊 */
 .move-strip .num {
+  inline-size: 5.4em;
+  flex: none;
   font-family: var(--kai);
   font-size: 11px;
+  line-height: 1.15;
   color: var(--grey-ink);
+}
+.move-strip li.empty .num {
+  display: none;
 }
 .move-strip .who {
   font-family: var(--kai);
@@ -436,8 +478,11 @@
   }
   .game-status {
     left: 12px;
-    width: 180px;
-    gap: 10px;
+    width: 210px;
+  }
+  .clocks {
+    gap: 8px;
+    --seal-size: 18px;
   }
   .game-moves {
     right: 12px;
@@ -465,22 +510,26 @@
     gap: 8px;
     font-size: 12px;
   }
+  .status-head {
+    gap: 8px;
+  }
   .turn {
     --seal-size: 28px;
   }
   .turn-main {
     font-size: 20px;
   }
-  .sky-mansion {
-    font-size: 17px;
-  }
-  .sky-phase,
-  .clocks,
-  .game-controls {
-    font-size: 12px;
+  .sky-line,
+  .alerts {
+    font-size: 13px;
   }
   .clocks {
-    gap: 6px;
+    gap: 10px;
+    font-size: 13px;
+    --seal-size: 18px;
+  }
+  .game-controls {
+    font-size: 12px;
   }
   .game-controls button {
     font-size: 14px;

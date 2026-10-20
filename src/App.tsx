@@ -1,4 +1,4 @@
-// 進站流程：封面 → 大廳（單機、建房、加入、自動配對、我的棋譜）→ 對局
+// 進站流程：封面 → 大廳（單機、建房、加入、積分配對、個人資料、我的棋譜、設定）→ 對局
 
 import { useEffect, useState } from "react";
 import type { MeResponse } from "./protocol";
@@ -6,13 +6,17 @@ import { fetchMe, logout, saveName, savedName, savedRoom } from "./net";
 import { LocalGame } from "./LocalGame";
 import { type OnlineAction, OnlineGame } from "./OnlineGame";
 import { RecordsPage } from "./Records";
+import { ProfilePage } from "./Profile";
+import { SettingsPage } from "./SettingsPage";
 import { Lobby } from "./Lobby";
 
 type Mode =
   | { kind: "menu" }
   | { kind: "local" }
   | { kind: "online"; action: OnlineAction }
-  | { kind: "records" };
+  | { kind: "records" }
+  | { kind: "profile" }
+  | { kind: "settings"; notice?: string };
 
 // 邀請連結帶的房號：?room=ABCDE
 const inviteCode = () =>
@@ -24,8 +28,22 @@ const LOGIN_NOTICES: Record<string, string> = {
   cancelled: "已取消登入",
   unavailable: "伺服器還沒設定好 Google 登入",
 };
-const loginNotice = () =>
-  LOGIN_NOTICES[new URLSearchParams(location.search).get("login") ?? ""] ?? null;
+// 付款後伺服器導回來會帶 ?billing=結果
+const BILLING_NOTICES: Record<string, string> = {
+  paid: "付款成功，訂閱已生效",
+  pending: "付款處理中，完成後訂閱會自動生效",
+  failed: "付款沒有完成。如果已經扣款但訂閱沒生效，請來信告訴我們",
+  cancelled: "已取消付款",
+};
+const NOTICE_PARAMS = { login: LOGIN_NOTICES, billing: BILLING_NOTICES };
+const urlNotice = () => {
+  const params = new URLSearchParams(location.search);
+  for (const [key, notices] of Object.entries(NOTICE_PARAMS)) {
+    const notice = notices[params.get(key) ?? ""];
+    if (notice) return notice;
+  }
+  return null;
+};
 
 // 封面翻開過就記在這個分頁裡，登入回來或重新整理不用再翻一次
 const COVER_KEY = "tkc.coverOpened";
@@ -48,15 +66,17 @@ export default function App() {
   const [opened, setOpened] = useState(coverOpened);
   const [name, setName] = useState(savedName);
   const [code, setCode] = useState(inviteCode);
-  const [notice, setNotice] = useState<string | null>(loginNotice);
+  const [notice, setNotice] = useState<string | null>(urlNotice);
   // undefined：還在問伺服器；null：伺服器沒回應
   const [me, setMe] = useState<MeResponse | null | undefined>(undefined);
+  const [onlineRound, setOnlineRound] = useState(0); // 再配一局時換一個新的連線畫面
 
   useEffect(() => {
-    // 提示讀過就把 ?login= 從網址拿掉，重新整理才不會又跳出來
+    // 提示讀過就把 ?login= / ?billing= 從網址拿掉，重新整理才不會又跳出來
     const url = new URL(location.href);
-    if (url.searchParams.has("login")) {
-      url.searchParams.delete("login");
+    const keys = Object.keys(NOTICE_PARAMS).filter((key) => url.searchParams.has(key));
+    if (keys.length) {
+      for (const key of keys) url.searchParams.delete(key);
       history.replaceState(null, "", url);
     }
     let alive = true;
@@ -79,12 +99,26 @@ export default function App() {
   const backToMenu = (message?: string) => {
     setNotice(message ?? null);
     setMode({ kind: "menu" });
+    // 剛下完積分對局的話積分變了，重新問一次
+    fetchMe().then((res) => res && setMe(res));
   };
 
   if (mode.kind === "local") return <LocalGame onExit={() => backToMenu()} />;
   if (mode.kind === "online") {
     return (
-      <OnlineGame name={name.trim()} action={mode.action} onExit={backToMenu} />
+      <OnlineGame
+        name={name.trim()}
+        action={mode.action}
+        key={onlineRound}
+        rating={me?.account?.rating ?? null}
+        onExit={backToMenu}
+        onRematch={() => {
+          setOnlineRound((r) => r + 1);
+          setMode({ kind: "online", action: { type: "match" } });
+          // 積分變了，配對畫面上的段位要更新
+          fetchMe().then((res) => res && setMe(res));
+        }}
+      />
     );
   }
   if (mode.kind === "records" && me?.account) {
@@ -92,6 +126,7 @@ export default function App() {
     return (
       <RecordsPage
         subscription={account.subscription}
+        payments={me.payments}
         fakeBilling={me.fakeBilling}
         onSubscriptionChange={(subscription) =>
           setMe({ ...me, account: { ...account, subscription } })
@@ -101,10 +136,31 @@ export default function App() {
     );
   }
 
+  if (mode.kind === "profile" && me?.account) {
+    return (
+      <ProfilePage onExit={() => backToMenu()} onRecords={() => setMode({ kind: "records" })} />
+    );
+  }
+  if (mode.kind === "settings") {
+    return (
+      <SettingsPage
+        name={name}
+        loggedIn={!!me?.account}
+        notice={mode.notice}
+        onNameSaved={(saved) => {
+          setName(saved);
+          if (me?.account) setMe({ ...me, account: { ...me.account, name: saved } });
+        }}
+        onExit={() => backToMenu()}
+      />
+    );
+  }
+
   const trimmed = name.trim();
   const goOnline = (action: OnlineAction) => {
+    // 沒暱稱就先帶去設定取一個
     if (!trimmed) {
-      setNotice("連線對戰要先輸入暱稱");
+      setMode({ kind: "settings", notice: "連線對戰前先取個暱稱，別人才知道你是誰" });
       return;
     }
     saveName(trimmed);
@@ -116,7 +172,6 @@ export default function App() {
     <Lobby
       me={me}
       name={name}
-      onNameChange={setName}
       code={code}
       onCodeChange={setCode}
       notice={notice}
@@ -126,7 +181,10 @@ export default function App() {
         setOpened(true);
       }}
       onCreate={() => goOnline({ type: "create" })}
-      onMatch={() => goOnline({ type: "match" })}
+      onMatch={() => {
+        if (me?.account) goOnline({ type: "match" });
+        else setNotice("積分配對要先登入，輸贏才有地方記分");
+      }}
       onJoin={(focusCode) => {
         if (!code.trim()) {
           setNotice("先輸入朋友給的房號");
@@ -140,6 +198,8 @@ export default function App() {
         setMode({ kind: "local" });
       }}
       onRecords={() => setMode({ kind: "records" })}
+      onProfile={() => setMode({ kind: "profile" })}
+      onSettings={() => setMode({ kind: "settings" })}
       onLogout={async () => {
         if (!me) return;
         if (await logout()) setMe({ ...me, account: null });

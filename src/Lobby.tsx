@@ -1,8 +1,9 @@
 // 大廳：一本奏摺。封面翻開後往右收，停在右邊；內頁由右往左直書，一欄一件事。
 
 import { type RefObject, useRef } from "react";
-import { type MeResponse, MAX_NAME_LENGTH, PLAN_NAMES } from "./protocol";
+import { type MeResponse, PLAN_NAMES } from "./protocol";
 import { loginUrl } from "./net";
+import { rankOf } from "./rank";
 import "./lobby.css";
 
 // 牌記上的作者名字
@@ -11,7 +12,6 @@ const AUTHOR = "○○○";
 type Props = {
   me: MeResponse | null | undefined; // undefined：還在問伺服器；null：伺服器沒回應
   name: string;
-  onNameChange: (name: string) => void;
   code: string;
   onCodeChange: (code: string) => void;
   notice: string | null;
@@ -22,6 +22,8 @@ type Props = {
   onJoin: (focusCode: () => void) => void; // 沒填房號時會叫它把游標移到房號
   onLocal: () => void;
   onRecords: () => void;
+  onProfile: () => void;
+  onSettings: () => void;
   onLogout: () => void;
 };
 
@@ -50,12 +52,7 @@ export function Lobby(props: Props) {
           </button>
         </section>
 
-        <section className="fold">
-          <button className="action" onClick={props.onMatch}>
-            <span className="action-label">自動配對</span>
-            <span className="action-desc">湊滿三人自動開局</span>
-          </button>
-        </section>
+        <MatchFold {...props} />
 
         <JoinFold {...props} codeRef={codeRef} />
 
@@ -63,6 +60,15 @@ export function Lobby(props: Props) {
           <button className="action" onClick={props.onLocal}>
             <span className="action-label">單機</span>
             <span className="action-desc">和兩個電腦對弈</span>
+          </button>
+        </section>
+
+        <section className="fold">
+          <button className="action" onClick={props.onSettings}>
+            <span className="action-label">設定</span>
+            <span className="action-desc">
+              {props.name.trim() ? `暱稱：${props.name.trim()}` : "取個暱稱、調整對弈輔助"}
+            </span>
           </button>
         </section>
 
@@ -98,23 +104,28 @@ export function Lobby(props: Props) {
   );
 }
 
-// 帳號：沒登入就是登入按鈕；登入後是「我的棋譜」和登出
-function AccountFold({ me, onRecords, onLogout }: Props) {
+// 帳號：沒登入就是登入按鈕；登入後是「個人資料」，底下小字是我的棋譜和登出
+function AccountFold({ me, onProfile, onRecords, onLogout }: Props) {
   if (me?.account) {
     const plan = me.account.subscription && PLAN_NAMES[me.account.subscription.plan];
     return (
       <section className="fold">
         <div className="account">
-          <button className="action" onClick={onRecords}>
-            <span className="action-label">我的棋譜</span>
+          <button className="action" onClick={onProfile}>
+            <span className="action-label">個人資料</span>
             <span className="action-desc">
               已登入：{me.account.name}
               {plan && `（${plan}）`}
             </span>
           </button>
-          <button className="action-small" onClick={onLogout}>
-            登出
-          </button>
+          <div className="account-links">
+            <button className="action-small" onClick={onRecords}>
+              我的棋譜
+            </button>
+            <button className="action-small" onClick={onLogout}>
+              登出
+            </button>
+          </div>
         </div>
       </section>
     );
@@ -131,13 +142,40 @@ function AccountFold({ me, onRecords, onLogout }: Props) {
   );
 }
 
-// 加入房間：直的房號輸入框，下面是橫的暱稱
+// 積分配對：登入後寫自己的段位；沒登入提醒要先登入
+function MatchFold({ me, onMatch }: Props) {
+  const account = me?.account;
+  const rank = account && rankOf(account.rating);
+  return (
+    <section className="fold">
+      <button className="action" onClick={onMatch}>
+        <span className="action-label">積分配對</span>
+        <span className="action-desc">
+          {rank ? (
+            <>
+              {rank.label}
+              {"　"}
+              <span className="upright">{account.rating}</span>分
+              {rank.toNext !== null && (
+                <>
+                  ，再<span className="upright">{rank.toNext}</span>分升段
+                </>
+              )}
+            </>
+          ) : (
+            "配到段位相近的對手，要先登入"
+          )}
+        </span>
+      </button>
+    </section>
+  );
+}
+
+// 加入房間：直的房號輸入框（暱稱在設定裡改）
 function JoinFold({
   code,
   onCodeChange,
   onJoin,
-  name,
-  onNameChange,
   codeRef,
 }: Props & { codeRef: RefObject<HTMLInputElement | null> }) {
   const join = () => onJoin(() => codeRef.current?.focus());
@@ -161,15 +199,6 @@ function JoinFold({
           autoComplete="off"
         />
       </div>
-      <label className="nickname">
-        <span>暱稱</span>
-        <input
-          value={name}
-          maxLength={MAX_NAME_LENGTH}
-          onChange={(e) => onNameChange(e.target.value)}
-          placeholder="輸入你的暱稱"
-        />
-      </label>
     </section>
   );
 }

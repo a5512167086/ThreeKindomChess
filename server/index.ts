@@ -1,16 +1,21 @@
-// 三國象棋連線伺服器：房間、自動配對、權威棋局、電腦補位、私聊轉發、帳號登入
+// 三國象棋連線伺服器：房間、積分配對、權威棋局、電腦補位、私聊轉發、帳號登入
 //
-// 開發時：yarn server（預設 3001 port），前端的 Vite 會把 /socket.io 和 /auth 轉過來。
-// 設定放在專案根目錄的 .env（參考 .env.example）。
+// 開發時：yarn server（預設 3001 port），前端的 Vite 會把 /socket.io、/auth、/api、/billing 轉過來。
+// 正式上線：yarn build 之後 yarn start，網頁也由這台伺服器送（dist/）。
+// 設定放在專案根目錄的 .env（參考 .env.example）；Render 之類的主機改在後台設環境變數。
 
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { createServer } from "node:http";
+import { fileURLToPath } from "node:url";
 import { Server, type Socket } from "socket.io";
 import { openDb } from "./db";
 import { type Account, accountFromCookie, createAuthHandler, renameAccount } from "./auth";
 import { createApiHandler } from "./api";
-import { saveGame } from "./records";
+import { createCheckout } from "./checkout";
+import { createStaticHandler } from "./static";
+import { ratingOf, saveGame } from "./records";
+import { type QueueEntry, pickMatch, placements } from "../src/rank";
 import { type GameSetup, type GameState, TURN_ORDER, chatOpen, newGame, play } from "../src/game";
 import { randomSkyStart } from "../src/sky";
 import { chooseMove } from "../src/ai";
@@ -27,6 +32,7 @@ import {
   type ClientToServerEvents,
   type HandshakeAuth,
   type MoveMsg,
+  type RatingChange,
   type RecordSeat,
   type RoomStatus,
   type RoomView,
@@ -48,12 +54,31 @@ const GOOGLE =
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       }
     : null;
+// 金流：沒填就不顯示那個付款方式。預設是測試環境，*_LIVE=1 才是正式收款
+const NEWEBPAY =
+  process.env.NEWEBPAY_MERCHANT_ID && process.env.NEWEBPAY_HASH_KEY && process.env.NEWEBPAY_HASH_IV
+    ? {
+        merchantId: process.env.NEWEBPAY_MERCHANT_ID,
+        hashKey: process.env.NEWEBPAY_HASH_KEY,
+        hashIV: process.env.NEWEBPAY_HASH_IV,
+        live: process.env.NEWEBPAY_LIVE === "1",
+      }
+    : null;
+const PAYPAL =
+  process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET
+    ? {
+        clientId: process.env.PAYPAL_CLIENT_ID,
+        clientSecret: process.env.PAYPAL_CLIENT_SECRET,
+        live: process.env.PAYPAL_LIVE === "1",
+      }
+    : null;
 // 開發用：不付錢就能訂閱。正式上線絕對不要設
 const FAKE_BILLING = process.env.FAKE_BILLING === "1";
 const USER_PREFIX = "user:"; // 已登入玩家的 playerId 開頭，訪客不能用
 const AI_DELAY_MS = 600; // 電腦每步之間的停頓
 const WAITING_GRACE_MS = 30_000; // 還沒開局的房間，斷線多久就移出
 const IDLE_ROOM_TTL_MS = 10 * 60_000; // 房間裡沒有真人在線多久就刪除
+const MATCH_RETRY_MS = 2000; // 排隊時每隔多久重新試著湊一組（等越久可接受的分差越大）
 
 type SocketData = { account: Account | null };
 type GameSocket = Socket<
@@ -69,6 +94,7 @@ type Player = {
   id: string;
   publicId: string;
   userId: string | null; // 有登入才有，棋譜存在這個帳號底下
+  rating: number | null; // 積分（排積分配對時從資料庫讀進來）
   name: string;
   socketId: string | null;
   roomCode: string | null;
@@ -85,6 +111,9 @@ type Room = {
   memberIds: string[]; // 房裡的真人（最多 3 個）
   status: RoomStatus;
   round: number;
+  rated: boolean; // 積分配對開的房間
+  quitters: Side[]; // 積分對局中途離開的人（照離開順序），名次排最後
+  ratingChanges: Partial<Record<Side, RatingChange>> | null;
   seats: Record<Side, Seat> | null;
   roster: Record<Side, RosterSeat> | null;
   startedAt: Date | null;
@@ -100,22 +129,31 @@ type Room = {
 const players = new Map<string, Player>();
 const rooms = new Map<string, Room>();
 const leaveTimers = new Map<string, NodeJS.Timeout>(); // playerId -> 斷線移出計時
-let queue: string[] = []; // 自動配對排隊中的 playerId
+let queue: QueueEntry[] = []; // 積分配對排隊中的人（id 是 playerId）
 
 const { db, label: dbLabel } = await openDb({
   url: process.env.DATABASE_URL,
   pgliteDir: process.env.PGLITE_DIR,
 });
+const handleStatic = createStaticHandler(fileURLToPath(new URL("../dist", import.meta.url)));
+const checkout = createCheckout(db, { publicOrigin: PUBLIC_ORIGIN, newebpay: NEWEBPAY, paypal: PAYPAL });
 const handleAuth = createAuthHandler(db, {
   publicOrigin: PUBLIC_ORIGIN,
   google: GOOGLE,
+  payments: checkout.providers,
   fakeBilling: FAKE_BILLING,
 });
-const handleApi = createApiHandler(db, { publicOrigin: PUBLIC_ORIGIN, fakeBilling: FAKE_BILLING });
+const handleApi = createApiHandler(db, {
+  publicOrigin: PUBLIC_ORIGIN,
+  fakeBilling: FAKE_BILLING,
+  checkout,
+});
 
 const httpServer = createServer(async (req, res) => {
   if (await handleAuth(req, res)) return;
   if (await handleApi(req, res)) return;
+  if (await checkout.handle(req, res)) return;
+  if (handleStatic?.(req, res)) return;
   res.writeHead(404).end();
 });
 const io = new Server<
@@ -201,6 +239,7 @@ function roomView(room: Room): RoomView {
                   playerId: publicIdOf(seat.playerId),
                   name: players.get(seat.playerId)?.name ?? "?",
                   online: isOnline(seat.playerId),
+                  rating: room.rated ? players.get(seat.playerId)?.rating ?? null : null,
                 },
           ];
         })
@@ -211,6 +250,8 @@ function roomView(room: Room): RoomView {
     hostId: publicIdOf(room.hostId),
     status: room.status,
     round: room.round,
+    rated: room.rated,
+    ratingChanges: room.ratingChanges,
     members: room.memberIds.map((id) => ({
       playerId: publicIdOf(id),
       name: players.get(id)?.name ?? "?",
@@ -240,13 +281,16 @@ function syncPlayer(room: Room, playerId: string) {
 
 // ---- 房間 ----
 
-function createRoom(hostId: string): Room {
+function createRoom(hostId: string, rated = false): Room {
   const room: Room = {
     code: newRoomCode(),
     hostId,
     memberIds: [],
     status: "waiting",
     round: 0,
+    rated,
+    quitters: [],
+    ratingChanges: null,
     seats: null,
     roster: null,
     startedAt: null,
@@ -298,6 +342,7 @@ function removeMember(room: Room, playerId: string) {
   socket?.emit("room:state", null);
 
   const side = seatOf(room, playerId);
+  if (side && room.rated && room.status === "playing") room.quitters.push(side);
   if (side && room.seats) room.seats[side] = { kind: "ai" };
 
   if (room.memberIds.length === 0) {
@@ -380,7 +425,8 @@ function applyMove(room: Room, move: MoveMsg): boolean {
   return true;
 }
 
-// 對局結束：有登入玩家參加就把棋譜存進資料庫（存失敗不影響對局）
+// 對局結束：有登入玩家參加就把棋譜存進資料庫（存失敗不影響對局）。
+// 積分配對的局順便算分，算完告訴房裡的人
 function saveRecord(room: Room) {
   const { game, roster, startedAt } = room;
   if (!game || !roster || !startedAt) return;
@@ -388,6 +434,16 @@ function saveRecord(room: Room) {
     const userId = roster[side]?.userId;
     return userId ? [{ userId, side }] : [];
   });
+  const rated = room.rated && accounts.length === ROOM_SIZE;
+  // 名次：積分局裡中途離開的人排最後；一般局只看出局順序
+  const order = placements(game, rated ? room.quitters : []);
+  const places: Partial<Record<Side, number>> = {};
+  // 同名次的下一名跳號：兩家並列第一，第三家就是第三名
+  let ahead = 0;
+  for (const group of order) {
+    for (const side of group) places[side] = ahead + 1;
+    ahead += group.length;
+  }
   saveGame(db, {
     celestial: game.celestial,
     skyStart: game.skyStart,
@@ -401,9 +457,23 @@ function saveRecord(room: Room) {
     players: accounts,
     winner: game.winner,
     drawReason: game.drawReason,
+    places,
+    rated: rated ? { order } : undefined,
     startedAt,
     finishedAt: new Date(),
-  }).catch((err) => console.error(`房間 ${room.code} 的棋譜存檔失敗`, err));
+  })
+    .then((saved) => {
+      if (!saved || !rated) return;
+      for (const side of TURN_ORDER) {
+        const change = saved.ratings[side];
+        const userId = roster[side]?.userId;
+        const player = userId ? players.get(USER_PREFIX + userId) : undefined;
+        if (change && player) player.rating = change.after;
+      }
+      room.ratingChanges = saved.ratings;
+      if (rooms.get(room.code) === room) broadcastRoom(room);
+    })
+    .catch((err) => console.error(`房間 ${room.code} 的棋譜存檔失敗`, err));
 }
 
 // 客戶端重播要用的開局設定
@@ -448,21 +518,27 @@ function scheduleAi(room: Room) {
 
 // ---- 自動配對 ----
 
+const inQueue = (playerId: string) => queue.some((e) => e.id === playerId);
+
 function leaveQueue(playerId: string) {
-  if (!queue.includes(playerId)) return;
-  queue = queue.filter((id) => id !== playerId);
+  if (!inQueue(playerId)) return;
+  queue = queue.filter((e) => e.id !== playerId);
   socketOf(playerId)?.emit("match:status", null);
   announceQueue();
 }
 
 const announceQueue = () =>
-  queue.forEach((id) => socketOf(id)?.emit("match:status", queue.length));
+  queue.forEach((e) => socketOf(e.id)?.emit("match:status", queue.length));
 
+// 分數相近的三個人湊一組開局；湊不到就等下一次（等越久分差放越寬）
 function tryMatch() {
-  queue = queue.filter(isOnline);
-  while (queue.length >= ROOM_SIZE) {
-    const ids = queue.splice(0, ROOM_SIZE);
-    const room = createRoom(ids[0]);
+  queue = queue.filter((e) => isOnline(e.id));
+  for (;;) {
+    const group = pickMatch(queue, Date.now(), ROOM_SIZE);
+    if (!group) break;
+    const ids = group.map((e) => e.id);
+    queue = queue.filter((e) => !ids.includes(e.id));
+    const room = createRoom(ids[0], true);
     for (const id of ids) {
       socketOf(id)?.emit("match:status", null);
       addMember(room, id);
@@ -471,6 +547,9 @@ function tryMatch() {
   }
   announceQueue();
 }
+setInterval(() => {
+  if (queue.length >= ROOM_SIZE) tryMatch();
+}, MATCH_RETRY_MS);
 
 // ---- 連線 ----
 
@@ -515,6 +594,7 @@ io.on("connection", (socket: GameSocket) => {
       id: playerId,
       publicId: randomUUID(),
       userId: account?.id ?? null,
+      rating: null,
       name: "",
       socketId: null,
       roomCode: null,
@@ -581,14 +661,25 @@ io.on("connection", (socket: GameSocket) => {
     const room = myRoom();
     if (!room) return ack({ ok: false, error: "你不在房間裡" });
     if (room.hostId !== playerId) return ack({ ok: false, error: "只有房主可以開始" });
+    if (room.rated) return ack({ ok: false, error: "積分對局只算一局，想再下請重新配對" });
     if (room.status === "playing") return ack({ ok: false, error: "已經在對局中" });
     startGame(room);
     ack({ ok: true });
   });
 
-  socket.on("match:find", (ack) => {
+  socket.on("match:find", async (ack) => {
+    if (!me.userId) return ack({ ok: false, error: "積分配對要先登入" });
     if (myRoom()) return ack({ ok: false, error: "你已經在房間裡了" });
-    if (!queue.includes(playerId)) queue.push(playerId);
+    if (inQueue(playerId)) return ack({ ok: true });
+    try {
+      me.rating = (await ratingOf(db, me.userId))?.rating ?? 0;
+    } catch (err) {
+      console.error("讀取積分失敗", err);
+      return ack({ ok: false, error: "讀不到你的積分，請再試一次" });
+    }
+    // 讀資料庫的這段時間可能已經斷線、進了房間或重複按了
+    if (me.socketId !== socket.id || myRoom() || inQueue(playerId)) return ack({ ok: true });
+    queue.push({ id: playerId, rating: me.rating, since: Date.now() });
     ack({ ok: true });
     tryMatch();
   });
@@ -660,6 +751,9 @@ io.on("connection", (socket: GameSocket) => {
 httpServer.listen(PORT, () => {
   console.log(`三國象棋伺服器啟動：http://localhost:${PORT}`);
   console.log(`資料庫：${dbLabel}`);
+  console.log(`網頁：${handleStatic ? "由這台伺服器送出 dist/" : "沒有 dist/（開發時由 Vite 送）"}`);
   console.log(`Google 登入：${GOOGLE ? "已設定" : "未設定（.env 沒有 GOOGLE_CLIENT_ID / SECRET）"}`);
+  const mode = (cfg: { live: boolean } | null) => (cfg ? (cfg.live ? "正式收款" : "測試環境") : "未設定");
+  console.log(`金流：藍新 ${mode(NEWEBPAY)}、PayPal ${mode(PAYPAL)}`);
   if (FAKE_BILLING) console.log("假訂閱：開啟（只能在開發時用）");
 });
