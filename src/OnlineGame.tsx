@@ -10,6 +10,7 @@ import { type ChatMessage, type RatingChange, type RoomView, ROOM_SIZE } from ".
 import { type GameSocket, connect, saveRoom } from "./net";
 import { type Clock, fromClockView } from "./clock";
 import { GameView } from "./GameView";
+import { SheetPage } from "./SheetPage";
 import { SIDE_INK, sideName } from "./sides";
 import { rankOf } from "./rank";
 
@@ -367,50 +368,75 @@ function WaitingRoom({
   };
 
   return (
-    <Panel>
-      <div style={{ opacity: 0.7 }}>房號</div>
-      <div style={{ fontSize: 40, fontWeight: "bold", letterSpacing: 6 }}>
-        {room.code}
-      </div>
-      <div style={{ display: "flex", gap: 8, margin: "8px 0 16px" }}>
-        <input readOnly value={inviteUrl} style={{ flex: 1, minWidth: 0 }} />
-        <button onClick={copy}>{copied ? "已複製" : "複製邀請連結"}</button>
-      </div>
-
-      <div style={{ marginBottom: 8 }}>
-        玩家 {room.members.length} / {ROOM_SIZE}
-      </div>
-      <ul style={{ listStyle: "none", padding: 0, margin: "0 0 16px" }}>
-        {room.members.map((m) => (
-          <li key={m.playerId} style={{ padding: "4px 0" }}>
-            {m.online ? "🟢" : "⚪"} {m.name}
-            {m.playerId === room.hostId && "（房主）"}
-            {m.playerId === me && "（你）"}
-          </li>
-        ))}
-        {Array.from({ length: empty }, (_, i) => (
-          <li key={`empty-${i}`} style={{ padding: "4px 0", opacity: 0.5 }}>
-            ⚪ 空位
-          </li>
-        ))}
-      </ul>
-
-      <p style={{ fontSize: 14, opacity: 0.7, margin: "0 0 12px" }}>
-        紅、藍、黑的座位會在開局時隨機分配
-      </p>
-
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        {isHost ? (
-          <button onClick={onStart}>
-            開始對局
-            {empty > 0 ? `（${empty} 個空位由電腦補上）` : ""}
+    <SheetPage title={isHost ? "建立房間" : "加入房間"} exitLabel="離開房間" onExit={onLeave}>
+      <section className="sheet-section">
+        <h2>房號</h2>
+        <p className="room-code">{room.code}</p>
+        <p className="note">把房號或邀請連結傳給朋友，他們在大廳「加入房間」輸入房號就能進來</p>
+        <div className="field invite">
+          <input
+            type="text"
+            readOnly
+            value={inviteUrl}
+            aria-label="邀請連結"
+            onFocus={(e) => e.target.select()}
+          />
+          <button className="sheet-button" onClick={copy}>
+            {copied ? "已複製" : "複製邀請連結"}
           </button>
-        ) : (
-          <span>等待房主開始…</span>
-        )}
-        <button onClick={onLeave}>離開房間</button>
-      </div>
-    </Panel>
+        </div>
+      </section>
+
+      <section className="sheet-section">
+        <div className="section-head">
+          <h2>玩家</h2>
+          <span className="note">
+            {room.members.length} / {ROOM_SIZE}
+          </span>
+        </div>
+        <ul className="seats">
+          {room.members.map((m) => {
+            const tags = [m.playerId === room.hostId && "房主", m.playerId === me && "你"]
+              .filter(Boolean)
+              .join("・");
+            return (
+              <li key={m.playerId} className={`seat${m.online ? "" : " offline"}`}>
+                <span className={`seat-dot${m.online ? " online" : ""}`} />
+                <span className="seat-name">{m.name}</span>
+                {tags && <span className="seat-tag">{tags}</span>}
+                <span className="note seat-note">{m.online ? "已連線" : "離線"}</span>
+              </li>
+            );
+          })}
+          {Array.from({ length: empty }, (_, i) => (
+            <li key={`empty-${i}`} className="seat empty">
+              <span className="seat-dot" />
+              <span className="seat-name">空位</span>
+              <span className="note seat-note">開局時由電腦補上</span>
+            </li>
+          ))}
+        </ul>
+        <p className="note">紅、藍、黑的座位會在開局時隨機分配</p>
+      </section>
+
+      <section className="sheet-section">
+        <div className="start-row">
+          {isHost ? (
+            <>
+              <button className="sheet-button primary" onClick={onStart}>
+                開始對局
+              </button>
+              <span className="note">{empty > 0 ? `${empty} 個空位由電腦補上` : "人到齊了"}</span>
+            </>
+          ) : (
+            <>
+              <span>等待房主開始…</span>
+              <span className="note">房主按下開始後就會開局，空位由電腦補上</span>
+            </>
+          )}
+        </div>
+      </section>
+    </SheetPage>
   );
 }
 

@@ -6,9 +6,6 @@ import { loginUrl } from "./net";
 import { rankOf } from "./rank";
 import "./lobby.css";
 
-// 牌記上的作者名字
-const AUTHOR = "○○○";
-
 type Props = {
   me: MeResponse | null | undefined; // undefined：還在問伺服器；null：伺服器沒回應
   name: string;
@@ -45,14 +42,14 @@ export function Lobby(props: Props) {
 
         <AccountFold {...props} />
 
+        <MatchFold {...props} />
+
         <section className="fold">
-          <button className="action primary" onClick={props.onCreate}>
+          <button className="action" onClick={props.onCreate}>
             <span className="action-label">建立房間</span>
             <span className="action-desc">開一間新房，把房號傳給朋友</span>
           </button>
         </section>
-
-        <MatchFold {...props} />
 
         <JoinFold {...props} codeRef={codeRef} />
 
@@ -93,12 +90,6 @@ export function Lobby(props: Props) {
         >
           開始遊戲
         </button>
-        <footer className="colophon">
-          <p className="colophon-title">三垣</p>
-          <p className="colophon-author">{AUTHOR} 著</p>
-          <p>二〇二六年刊行</p>
-          <p>版權所有，翻印必究</p>
-        </footer>
       </aside>
     </div>
   );

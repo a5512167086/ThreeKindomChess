@@ -55,7 +55,7 @@ export const sessions = pgTable("sessions", {
 
 // ---- 棋譜 ----
 
-// 一局結束後的完整紀錄；只有至少一位登入玩家參加的對局才會存
+// 一局結束後的完整紀錄；只有至少一位登入玩家參加的對局才會存（單機的局由登入玩家自己傳上來）
 export const games = pgTable("games", {
   id: uuid("id").primaryKey().defaultRandom(),
   celestial: boolean("celestial").notNull(), // 有沒有星象（重播要用同一套規則）
@@ -65,6 +65,7 @@ export const games = pgTable("games", {
   winner: text("winner").$type<Side>(),
   drawReason: text("draw_reason").$type<DrawReason>(),
   rated: boolean("rated").notNull().default(false), // 積分配對的局
+  local: boolean("local").notNull().default(false), // 單機對電腦的局（瀏覽器下完傳上來的）
   startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
   finishedAt: timestamp("finished_at", { withTimezone: true }).notNull(),
 });

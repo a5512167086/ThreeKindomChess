@@ -189,6 +189,17 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 訂閱：一個金流一排，左邊金流名稱、右邊方案按鈕 */
+.plan-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.plan-provider {
+  width: 150px;
+}
+
 /* ---- 設定 ---- */
 
 .field {
@@ -229,6 +240,18 @@
   opacity: 0.4;
   cursor: default;
 }
+.sheet-button.primary {
+  padding: 10px 28px;
+  border-color: var(--vermilion);
+  background: var(--vermilion);
+  color: var(--ivory);
+  font-size: 16px;
+}
+.sheet-button.primary:hover:not(:disabled) {
+  border-color: #a83019;
+  background: #a83019;
+  color: var(--ivory);
+}
 .choice {
   display: flex;
   align-items: flex-start;
@@ -243,6 +266,201 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* ---- 等待室 ---- */
+
+.room-code {
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: clamp(44px, 12vw, 64px);
+  line-height: 1.2;
+  letter-spacing: 0.24em;
+}
+.field.invite input[type="text"] {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  font-size: 15px;
+  color: var(--grey-ink);
+  border-bottom-color: var(--fold);
+}
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.seats {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.seat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 4px;
+  border-bottom: 1px solid var(--fold);
+}
+.seat.empty {
+  border-bottom-style: dashed;
+}
+.seat-dot {
+  flex: none;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border: 1.2px solid var(--grey-ink);
+  border-radius: 50%;
+}
+.seat-dot.online {
+  border-color: var(--green);
+  background: var(--green);
+}
+.seat.empty .seat-dot {
+  border-style: dashed;
+}
+.seat-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.seat.offline .seat-name,
+.seat.empty .seat-name {
+  color: var(--grey-ink);
+}
+.seat-tag {
+  flex: none;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--vermilion);
+}
+.seat-note {
+  flex: none;
+  margin-left: auto;
+}
+.start-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+/* ---- 我的棋譜 ---- */
+
+.quota {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.quota-count {
+  color: var(--grey-ink);
+}
+.quota-count b {
+  margin-right: 4px;
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 44px;
+  line-height: 1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+/* 格子：實心是還能看的，空心是今天用掉的 */
+.quota-pips {
+  display: flex;
+  gap: 6px;
+}
+.quota-pips span {
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--vermilion);
+}
+.quota-pips span.used {
+  border: 1.2px solid var(--fold);
+  background: none;
+}
+.records {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.record {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--fold);
+}
+/* 結果印：勝＝朱砂實心，負＝灰墨框，和＝摺痕框 */
+.record-seal {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 44px;
+  height: 44px;
+  border-radius: 4px;
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 24px;
+}
+.record-seal.win {
+  background: var(--vermilion);
+  color: var(--ivory);
+}
+.record-seal.loss {
+  border: 1.2px solid var(--grey-ink);
+  color: var(--grey-ink);
+}
+.record-seal.draw {
+  border: 1.2px solid var(--fold);
+  color: var(--grey-ink);
+}
+.record-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.record-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.record-side {
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 18px;
+}
+.record-rating {
+  font-size: 14px;
+  font-weight: 500;
+}
+.record-opponents {
+  overflow-wrap: anywhere;
+}
+.record .sheet-button {
+  flex: none;
+}
+
+@media (max-width: 640px) {
+  /* 窄螢幕：復盤按鈕換到下一行，內容才有寬度 */
+  .record {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+  .record-info {
+    flex-basis: calc(100% - 60px);
+  }
+  .record .sheet-button {
+    margin-left: 60px; /* 對齊內容，不要排到結果印底下 */
+  }
 }
 
 @media (max-width: 640px) {

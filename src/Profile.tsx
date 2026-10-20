@@ -1,10 +1,19 @@
-// 個人資料：段位與積分、戰績、帳號與訂閱（要登入）
+// 個人資料：段位與積分、戰績、訂閱（要登入）
 
 import { useEffect, useState } from "react";
-import { type ProfileResponse, PLAN_NAMES } from "./protocol";
-import { fetchProfile } from "./net";
+import {
+  type PaymentProvider,
+  type Plan,
+  type ProfileResponse,
+  type SubscriptionInfo,
+  PLAN_NAMES,
+  formatPrice,
+} from "./protocol";
+import { checkout, fakeCancel, fakeSubscribe, fetchProfile } from "./net";
 import { POINTS_PER_DIVISION, rankOf } from "./rank";
 import { SheetPage } from "./SheetPage";
+
+const PLANS = Object.keys(PLAN_NAMES) as Plan[];
 
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString("zh-TW", { dateStyle: "long" });
@@ -12,13 +21,14 @@ const formatDate = (iso: string) =>
 const percent = (part: number, whole: number) =>
   whole ? `${Math.round((part / whole) * 100)}%` : "—";
 
-export function ProfilePage({
-  onExit,
-  onRecords,
-}: {
-  onExit: () => void;
-  onRecords: () => void; // 去我的棋譜（訂閱也在那裡）
-}) {
+type Billing = {
+  subscription: SubscriptionInfo | null;
+  payments: PaymentProvider[];
+  fakeBilling: boolean;
+  onSubscriptionChange: (s: SubscriptionInfo | null) => void;
+};
+
+export function ProfilePage({ onExit, ...billing }: Billing & { onExit: () => void }) {
   // undefined：讀取中；null：讀取失敗
   const [profile, setProfile] = useState<ProfileResponse | null | undefined>(undefined);
   useEffect(() => {
@@ -33,12 +43,13 @@ export function ProfilePage({
     <SheetPage title="個人資料" onExit={onExit}>
       {profile === undefined && <p className="note">讀取中…</p>}
       {profile === null && <p>讀不到個人資料，請確認伺服器有在執行，或重新登入。</p>}
-      {profile && <ProfileBody profile={profile} onRecords={onRecords} />}
+      {profile && <ProfileBody profile={profile} />}
+      {profile && <SubscriptionSection {...billing} />}
     </SheetPage>
   );
 }
 
-function ProfileBody({ profile, onRecords }: { profile: ProfileResponse; onRecords: () => void }) {
+function ProfileBody({ profile }: { profile: ProfileResponse }) {
   const rank = rankOf(profile.rating);
   const { rated, all } = profile.stats;
   const into = profile.rating % POINTS_PER_DIVISION;
@@ -105,27 +116,86 @@ function ProfileBody({ profile, onRecords }: { profile: ProfileResponse; onRecor
           <Stat label="第三名" value={rated.places[2]} />
         </dl>
         <p className="note">
-          所有存下來的對局 {all.games} 局（含開房、電腦補位）：勝 {all.wins}、和 {all.draws}
+          連線對局 {all.games} 局（含開房、電腦補位，不含單機）：勝 {all.wins}、和 {all.draws}
         </p>
       </section>
 
-      <section className="sheet-section">
-        <h2>訂閱</h2>
-        {profile.subscription ? (
-          <p>
-            {PLAN_NAMES[profile.subscription.plan]}，到 {formatDate(profile.subscription.until)}
-          </p>
-        ) : (
-          <p>
-            還沒訂閱。免費帳號每天可以打開三局棋譜，
-            <button className="sheet-link" onClick={onRecords}>
-              到我的棋譜訂閱
-            </button>
-            後不限次數。
-          </p>
-        )}
-      </section>
     </>
+  );
+}
+
+// 訂閱：狀態與購買按鈕，每個金流一排（藍新收台幣、PayPal 收美金）。
+// 不會自動續扣，訂閱中再買就從原本的到期日往後延
+function SubscriptionSection({ subscription, payments, fakeBilling, onSubscriptionChange }: Billing) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // 成功的話整頁會離開去付款頁，所以不用把 busy 改回來
+  const pay = async (plan: Plan, provider: PaymentProvider) => {
+    setBusy(true);
+    setError(null);
+    if (!(await checkout(plan, provider))) {
+      setBusy(false);
+      setError("打不開付款頁，請再試一次");
+    }
+  };
+
+  const fakeChange = async (action: Plan | "cancel") => {
+    setBusy(true);
+    setError(null);
+    const next = action === "cancel" ? ((await fakeCancel()) ? null : undefined) : await fakeSubscribe(action);
+    setBusy(false);
+    if (next === undefined) setError("訂閱狀態更新失敗，請再試一次");
+    else onSubscriptionChange(next);
+  };
+
+  return (
+    <section className="sheet-section">
+      <h2>訂閱</h2>
+      {subscription ? (
+        <>
+          <p>
+            {PLAN_NAMES[subscription.plan]}，到 {formatDate(subscription.until)}
+          </p>
+          {payments.length > 0 && <p className="note">不會自動扣款，再買一期會從到期日往後延</p>}
+        </>
+      ) : (
+        <p>還沒訂閱。免費帳號每天可以打開三局棋譜，訂閱後不限次數。</p>
+      )}
+
+      {payments.map((provider) => (
+        <div key={provider} className="plan-row">
+          {PLANS.map((plan) => (
+            <button key={plan} className="sheet-button" disabled={busy} onClick={() => pay(plan, provider)}>
+              {PLAN_NAMES[plan]} {formatPrice(provider, plan)}
+            </button>
+          ))}
+        </div>
+      ))}
+
+      {fakeBilling && (
+        <div className="plan-row">
+          <span className="note plan-provider">開發用（不收費）</span>
+          {PLANS.map((plan) => (
+            <button key={plan} className="sheet-button" disabled={busy} onClick={() => fakeChange(plan)}>
+              {PLAN_NAMES[plan]}
+            </button>
+          ))}
+          {subscription && (
+            <button className="sheet-button" disabled={busy} onClick={() => fakeChange("cancel")}>
+              取消訂閱
+            </button>
+          )}
+        </div>
+      )}
+
+      {!subscription && !payments.length && !fakeBilling && <p className="note">付款功能準備中</p>}
+      {error && (
+        <p className="note" role="alert" style={{ color: "var(--vermilion)" }}>
+          {error}
+        </p>
+      )}
+    </section>
   );
 }
 

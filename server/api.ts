@@ -2,6 +2,7 @@
 //
 //   GET  /api/games                   我的棋譜列表與今天的觀看次數
 //   POST /api/games/:id/open          打開一局（免費帳號會用掉一次）
+//   POST /api/games/local             單機下完的一局（LocalGameUpload），重下一遍沒問題就存
 //   GET  /api/profile                 個人資料：段位、戰績、帳號與訂閱
 //   POST /api/profile/name            { name } 改暱稱
 //   POST /api/billing/checkout        { plan, provider } 開始付款（見 server/checkout.ts）
@@ -14,7 +15,7 @@ import { accountFromCookie, renameAccount } from "./auth";
 import { cancelSubscription, fakeSubscribe, isPaymentProvider, isPlan } from "./billing";
 import type { Checkout } from "./checkout";
 import { fromOwnSite, json, readJson } from "./http";
-import { listGames, openGame, quotaOf, ratingOf, statsOf } from "./records";
+import { listGames, localGameFrom, openGame, quotaOf, ratingOf, saveGame, statsOf } from "./records";
 import { subscriptionOf } from "./billing";
 import { users } from "./schema";
 import { eq } from "drizzle-orm";
@@ -29,6 +30,7 @@ import {
 export type ApiConfig = { publicOrigin: string; fakeBilling: boolean; checkout: Checkout };
 
 const OPEN_PATH = /^\/api\/games\/([^/]+)\/open$/;
+const LOCAL_GAME_MAX_BYTES = 512 * 1024; // 單機棋譜：三千步左右
 
 export function createApiHandler(db: Db, config: ApiConfig) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<boolean> => {
@@ -84,6 +86,17 @@ export function createApiHandler(db: Db, config: ApiConfig) {
         }
         await renameAccount(db, account.id, name);
         json(res, 200, { name });
+        return true;
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/games/local") {
+        const game = localGameFrom(await readJson(req, LOCAL_GAME_MAX_BYTES), account);
+        if (!game) {
+          json(res, 400, { error: "bad game" });
+          return true;
+        }
+        const saved = await saveGame(db, game);
+        json(res, 200, { id: saved?.id ?? null });
         return true;
       }
 

@@ -8,6 +8,7 @@ import type {
   DrawReason,
   GameRecord,
   GameSummary,
+  LocalGameUpload,
   MoveMsg,
   ProfileStats,
   RatingChange,
@@ -15,10 +16,14 @@ import type {
   ReplayQuota,
 } from "../src/protocol";
 import type { Side } from "../src/rules";
-import { rate } from "../src/rank";
+import { TURN_ORDER, newGame, play } from "../src/game";
+import { MANSIONS } from "../src/sky";
+import { placements, rate } from "../src/rank";
 
 export const FREE_REPLAYS_PER_DAY = 3;
 const LIST_LIMIT = 100;
+const MAX_LOCAL_MOVES = 3000; // 單機棋譜最多幾步，擋掉亂塞的資料
+const MAX_LOCAL_AGE_MS = 24 * 60 * 60 * 1000; // 開局時間最早只認到一天前
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // 次數以台灣時間的日期計算，午夜重置
@@ -43,7 +48,80 @@ export type FinishedGame = {
   finishedAt: Date;
   // 積分對局：名次（由好到壞，同組同名次）。三家都要是登入玩家
   rated?: { order: Side[][] };
+  local?: boolean; // 單機對電腦的局
 };
+
+const isSide = (v: unknown): v is Side => TURN_ORDER.includes(v as Side);
+const isIndex = (v: unknown) => Number.isInteger(v) && (v as number) >= 0 && (v as number) < 16;
+const isMove = (v: unknown): v is MoveMsg => {
+  const m = v as MoveMsg | null;
+  return (
+    typeof m?.pieceId === "string" &&
+    m.pieceId.length <= 32 &&
+    isSide(m.to?.panel) &&
+    isIndex(m.to.row) &&
+    isIndex(m.to.col)
+  );
+};
+
+// 單機傳上來的棋譜：從頭重下一遍，每一步都要合法、最後要分出結果，才回傳要存的內容。
+// 勝負、和局原因、名次都用重下的結果，不信任傳上來的
+export function localGameFrom(
+  body: unknown,
+  user: { id: string; name: string },
+  now = new Date()
+): FinishedGame | null {
+  const b = body as Partial<LocalGameUpload> | null;
+  if (typeof b?.celestial !== "boolean") return null;
+  if (!Number.isInteger(b.skyStart) || b.skyStart! < 0 || b.skyStart! >= MANSIONS.length) return null;
+  if (!Array.isArray(b.moves) || b.moves.length > MAX_LOCAL_MOVES || !b.moves.every(isMove)) return null;
+  if (!Array.isArray(b.aiSides) || !b.aiSides.every(isSide)) return null;
+
+  const aiSides = new Set(b.aiSides);
+  const humans = TURN_ORDER.filter((side) => !aiSides.has(side));
+  if (!humans.length) return null; // 三家都是電腦就不算自己的棋譜
+
+  let game = newGame({ celestial: b.celestial, skyStart: b.skyStart });
+  try {
+    for (const move of b.moves) {
+      const next = play(game, move.pieceId, move.to);
+      if (next === game) return null;
+      game = next;
+    }
+  } catch {
+    return null; // 奇怪的座標之類的，當成不合法
+  }
+  if (game.turn !== null) return null;
+
+  // 自己坐哪一家：有下紅方就是紅方（單機畫面的下方），不然是第一個自己下的
+  const mySide = humans.includes("Center") ? "Center" : humans[0];
+  const places: Partial<Record<Side, number>> = {};
+  let ahead = 0;
+  for (const group of placements(game)) {
+    for (const side of group) places[side] = ahead + 1;
+    ahead += group.length;
+  }
+  const started = new Date(typeof b.startedAt === "string" ? b.startedAt : NaN);
+  const startedOk = started.getTime() <= now.getTime() && now.getTime() - started.getTime() <= MAX_LOCAL_AGE_MS;
+  return {
+    celestial: b.celestial,
+    skyStart: b.skyStart!,
+    moves: b.moves.map(({ pieceId, to }) => ({ pieceId, to: { panel: to.panel, row: to.row, col: to.col } })),
+    seats: Object.fromEntries(
+      TURN_ORDER.map((side): [Side, RecordSeat] => [
+        side,
+        aiSides.has(side) ? { kind: "ai" } : { kind: "human", name: user.name },
+      ])
+    ) as Record<Side, RecordSeat>,
+    players: [{ userId: user.id, side: mySide }],
+    places,
+    winner: game.winner,
+    drawReason: game.drawReason,
+    startedAt: startedOk ? started : now,
+    finishedAt: now,
+    local: true,
+  };
+}
 
 export type SavedGame = { id: string; ratings: Partial<Record<Side, RatingChange>> };
 
@@ -84,6 +162,7 @@ export async function saveGame(db: Db, game: FinishedGame): Promise<SavedGame | 
         winner: game.winner,
         drawReason: game.drawReason,
         rated: !!game.rated,
+        local: !!game.local,
         startedAt: game.startedAt,
         finishedAt: game.finishedAt,
       })
@@ -116,7 +195,7 @@ export async function ratingOf(
   return row ?? null;
 }
 
-// 個人資料的戰績：積分局各名次幾次；所有存下來的局數、勝場、和局
+// 個人資料的戰績：積分局各名次幾次；連線對局的局數、勝場、和局（單機對電腦不算）
 export async function statsOf(db: Db, userId: string): Promise<ProfileStats> {
   const byPlace = await db
     .select({ place: gamePlayers.place, n: count() })
@@ -136,7 +215,7 @@ export async function statsOf(db: Db, userId: string): Promise<ProfileStats> {
     })
     .from(gamePlayers)
     .innerJoin(games, eq(gamePlayers.gameId, games.id))
-    .where(eq(gamePlayers.userId, userId));
+    .where(and(eq(gamePlayers.userId, userId), eq(games.local, false)));
   return {
     rated: { games: byPlace.reduce((a, r) => a + r.n, 0), places },
     all: { games: all?.games ?? 0, wins: all?.wins ?? 0, draws: all?.draws ?? 0 },
@@ -176,6 +255,7 @@ export async function listGames(db: Db, userId: string, now = new Date()): Promi
       moveCount: sql<number>`jsonb_array_length(${games.moves})`.mapWith(Number),
       ratingBefore: gamePlayers.ratingBefore,
       ratingAfter: gamePlayers.ratingAfter,
+      local: games.local,
       viewed: replayViews.gameId,
     })
     .from(gamePlayers)
@@ -264,6 +344,7 @@ export async function openGame(
       moveCount: g.moves.length,
       viewedToday: !subscribed,
       rating: changeOf(row.ratingBefore, row.ratingAfter),
+      local: g.local,
       celestial: g.celestial,
       skyStart: g.skyStart,
       // jsonb 存的時候會重排物件的欄位順序，這裡排回原本的樣子

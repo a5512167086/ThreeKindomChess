@@ -103,7 +103,7 @@ export default function App() {
     fetchMe().then((res) => res && setMe(res));
   };
 
-  if (mode.kind === "local") return <LocalGame onExit={() => backToMenu()} />;
+  if (mode.kind === "local") return <LocalGame loggedIn={!!me?.account} onExit={() => backToMenu()} />;
   if (mode.kind === "online") {
     return (
       <OnlineGame
@@ -122,9 +122,15 @@ export default function App() {
     );
   }
   if (mode.kind === "records" && me?.account) {
+    return (
+      <RecordsPage onSubscribe={() => setMode({ kind: "profile" })} onExit={() => backToMenu()} />
+    );
+  }
+
+  if (mode.kind === "profile" && me?.account) {
     const account = me.account;
     return (
-      <RecordsPage
+      <ProfilePage
         subscription={account.subscription}
         payments={me.payments}
         fakeBilling={me.fakeBilling}
@@ -133,12 +139,6 @@ export default function App() {
         }
         onExit={() => backToMenu()}
       />
-    );
-  }
-
-  if (mode.kind === "profile" && me?.account) {
-    return (
-      <ProfilePage onExit={() => backToMenu()} onRecords={() => setMode({ kind: "records" })} />
     );
   }
   if (mode.kind === "settings") {

@@ -76,12 +76,10 @@
   letter-spacing: 0.08em;
   color: var(--grey-ink);
 }
-.action.primary .action-label {
-  color: var(--vermilion);
-}
-/* 滑過或用鍵盤選到：字旁出現朱紅圈點 */
+/* 滑過或用鍵盤選到：字變朱紅，旁邊出現朱紅圈點 */
 .action:hover .action-label,
 .action:focus-visible .action-label {
+  color: var(--vermilion);
   text-emphasis: open circle var(--vermilion);
 }
 .action:focus-visible,
@@ -266,48 +264,6 @@
   visibility: hidden;
 }
 
-/* 牌記：封面上在右下角，翻開後移到題簽下面 */
-.colophon {
-  position: absolute;
-  top: calc(100% - 56px);
-  left: calc(100% - 64px);
-  width: min(220px, calc(var(--panel) - 24px));
-  box-sizing: border-box;
-  transform: translate(-100%, -100%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 16px 12px;
-  border: 1px solid rgb(201 164 92 / 0.7);
-  color: var(--dim);
-  font-size: 12px;
-  text-align: center;
-  transition:
-    left var(--duration) var(--ease),
-    top var(--duration) var(--ease),
-    transform var(--duration) var(--ease);
-}
-.colophon p {
-  margin: 0;
-}
-.colophon-title {
-  font-family: var(--kai);
-  font-weight: 700;
-  font-size: 17px;
-  color: var(--gold);
-}
-.colophon-author {
-  font-family: var(--kai);
-  font-size: 15px;
-  color: rgb(239 232 216 / 0.9);
-}
-.is-open .colophon {
-  top: calc(var(--open-top) + var(--slip-h) * var(--open-scale) + 48px);
-  left: calc(var(--panel) / 2);
-  transform: translate(-50%, 0);
-}
-
 /* 窄螢幕：右邊那欄縮窄，內頁可以左右捲動 */
 @media (max-width: 760px) {
   .memorial {
@@ -321,20 +277,12 @@
   .fold {
     flex: 0 0 120px;
   }
-  /* 封面上放不下右下角，改到正下方 */
-  .colophon {
-    top: calc(100% - 24px);
-    left: 50%;
-    transform: translate(-50%, -100%);
-    font-size: 11px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .cover,
   .slip,
-  .seal,
-  .colophon {
+  .seal {
     transition: none;
   }
 }

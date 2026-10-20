@@ -5,10 +5,12 @@ import "./pages.css";
 
 export function SheetPage({
   title,
+  exitLabel = "回大廳",
   onExit,
   children,
 }: {
   title: string;
+  exitLabel?: string; // 等待室是「離開房間」
   onExit: () => void;
   children: ReactNode;
 }) {
@@ -18,7 +20,7 @@ export function SheetPage({
         <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden>
           <path d="M10 3L5 8L10 13" fill="none" stroke="currentColor" strokeWidth="1.8" />
         </svg>
-        回大廳
+        {exitLabel}
       </button>
       <div className="sheet-inner">
         <h1 className="sheet-title">{title}</h1>

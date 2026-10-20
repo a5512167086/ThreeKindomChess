@@ -6,6 +6,7 @@ import type {
   ClientToServerEvents,
   GamesResponse,
   HandshakeAuth,
+  LocalGameUpload,
   LoginProvider,
   MeResponse,
   OpenGameResponse,
@@ -110,6 +111,11 @@ export async function fetchGames(): Promise<GamesResponse | null> {
   } catch {
     return null;
   }
+}
+
+// 單機下完的一局存進我的棋譜；成功回傳 true
+export async function saveLocalGame(game: LocalGameUpload): Promise<boolean> {
+  return (await post("/api/games/local", game)).status === 200;
 }
 
 // 打開一局：成功、今天次數用完、或其他錯誤

@@ -1,6 +1,7 @@
-// 單機模式：同一台電腦上下棋，可以把任意幾家交給電腦
+// 單機模式：同一台電腦上下棋，可以把任意幾家交給電腦。
+// 登入的話，下完的局會傳到伺服器存進我的棋譜
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Pos, Side } from "./rules";
 import { type GameState, TURN_ORDER, newGame, play } from "./game";
 import { chooseMove } from "./ai";
@@ -13,7 +14,8 @@ import {
   pauseClock,
   resumeClock,
 } from "./clock";
-import type { ChatMessage } from "./protocol";
+import type { ChatMessage, MoveMsg } from "./protocol";
+import { saveLocalGame } from "./net";
 import { GameView } from "./GameView";
 import { sideName } from "./sides";
 
@@ -23,12 +25,14 @@ const AI_DELAY_MS = 600;
 // 單機時坐在畫面下方的一家（聊天也以這家的身分）
 const ME: Side = "Center";
 
-// 棋局與時鐘一起更新，走一步時同時扣時間
-type Match = { game: GameState; clock: Clock };
+// 棋局與時鐘一起更新，走一步時同時扣時間；棋步另外記下來，下完要存棋譜
+type Match = { game: GameState; clock: Clock; moves: MoveMsg[]; startedAt: string };
 
 const startMatch = (celestial: boolean): Match => ({
   game: newGame({ celestial, skyStart: randomSkyStart() }),
   clock: newClock(Date.now()),
+  moves: [],
+  startedAt: new Date().toISOString(),
 });
 
 function applyMove(m: Match, pieceId: string, to: Pos, now: number): Match {
@@ -36,10 +40,12 @@ function applyMove(m: Match, pieceId: string, to: Pos, now: number): Match {
   if (!mover) return m;
   const game = play(m.game, pieceId, to);
   if (game === m.game) return m;
-  return { game, clock: afterMove(m.clock, mover, now) };
+  return { ...m, game, clock: afterMove(m.clock, mover, now), moves: [...m.moves, { pieceId, to }] };
 }
 
-export function LocalGame({ onExit }: { onExit: () => void }) {
+type SaveStatus = "saved" | "failed";
+
+export function LocalGame({ loggedIn, onExit }: { loggedIn: boolean; onExit: () => void }) {
   // 星象規則：改了之後按重新開始才生效
   const [celestial, setCelestial] = useState(true);
   const [match, setMatch] = useState(() => startMatch(true));
@@ -86,6 +92,23 @@ export function LocalGame({ onExit }: { onExit: () => void }) {
     const timer = setTimeout(() => playFor(game), wait);
     return () => clearTimeout(timer);
   }, [game, clock, reviewing]);
+
+  // 下完存棋譜：每一局只自動存一次；三家都給電腦的局不算自己的，不存
+  const [saved, setSaved] = useState<{ game: GameState; status: SaveStatus } | null>(null);
+  const savingFor = useRef<GameState | null>(null);
+  const humanPlayed = aiSides.length < TURN_ORDER.length;
+  const canSave = loggedIn && game.turn === null && humanPlayed;
+  const save = useCallback(() => {
+    const { game: g, moves, startedAt } = match;
+    savingFor.current = g;
+    saveLocalGame({ celestial: g.celestial, skyStart: g.skyStart, moves, aiSides, startedAt }).then((ok) => {
+      if (savingFor.current === g) setSaved({ game: g, status: ok ? "saved" : "failed" });
+    });
+  }, [match, aiSides]);
+  useEffect(() => {
+    if (canSave && savingFor.current !== game) save();
+  }, [canSave, game, save]);
+  const saveStatus = saved?.game === game ? saved.status : "saving";
 
   const toggleAi = (side: Side) =>
     setAiSides((sides) =>
@@ -143,6 +166,22 @@ export function LocalGame({ onExit }: { onExit: () => void }) {
             </label>
             {celestial !== game.celestial && <span className="note">重新開始後生效</span>}
           </div>
+          {game.turn === null && humanPlayed && (
+            <p className="note">
+              {!loggedIn ? (
+                "登入後，單機對局也會存到我的棋譜"
+              ) : saveStatus === "saving" ? (
+                "存棋譜中…"
+              ) : saveStatus === "saved" ? (
+                "這局已存到我的棋譜"
+              ) : (
+                <>
+                  棋譜沒存成功{" "}
+                  <button onClick={() => { setSaved(null); save(); }}>再存一次</button>
+                </>
+              )}
+            </p>
+          )}
           <div className="row">
             <button onClick={onExit}>回大廳</button>
             <button onClick={restart}>重新開始</button>

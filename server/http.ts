@@ -24,20 +24,20 @@ export const fromOwnSite = (req: IncomingMessage, publicOrigin: string) => {
   return !origin || origin === publicOrigin;
 };
 
-async function readBody(req: IncomingMessage): Promise<string | null> {
+async function readBody(req: IncomingMessage, maxBytes = MAX_BODY_BYTES): Promise<string | null> {
   let size = 0;
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
-    if (size > MAX_BODY_BYTES) return null;
+    if (size > maxBytes) return null;
     chunks.push(chunk as Buffer);
   }
   return Buffer.concat(chunks).toString("utf8");
 }
 
-// 讀 JSON 內容；太大或格式不對回傳 null
-export async function readJson(req: IncomingMessage): Promise<unknown> {
-  const text = await readBody(req);
+// 讀 JSON 內容；太大或格式不對回傳 null（棋譜這類比較大的內容可以放寬上限）
+export async function readJson(req: IncomingMessage, maxBytes?: number): Promise<unknown> {
+  const text = await readBody(req, maxBytes);
   if (text === null) return null;
   if (!text) return {};
   try {

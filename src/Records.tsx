@@ -1,77 +1,61 @@
-// 我的棋譜：列出自己下過的局、打開重播。
-// 免費帳號每天能打開的局數有上限（同一天重看同一局不扣），訂閱中不限。
+// 我的棋譜：列出自己下過的局、打開復盤。
+// 免費帳號每天能打開的局數有上限（同一天重看同一局不扣），訂閱中不限；訂閱在個人資料。
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Side } from "./rules";
 import { TURN_ORDER, replay } from "./game";
-import {
-  type GameRecord,
-  type GameSummary,
-  type GamesResponse,
-  type PaymentProvider,
-  type Plan,
-  type RatingChange,
-  type ReplayQuota,
-  type SubscriptionInfo,
-  PAYMENT_NAMES,
-  PLAN_NAMES,
-  formatPrice,
-} from "./protocol";
-import { checkout, fakeCancel, fakeSubscribe, fetchGames, openGame } from "./net";
+import { type GameRecord, type GameSummary, type GamesResponse, type ReplayQuota } from "./protocol";
+import { fetchGames, openGame } from "./net";
 import { GameView } from "./GameView";
-import { Panel } from "./OnlineGame";
-import { PANEL_COLORS, sideName } from "./sides";
+import { SheetPage } from "./SheetPage";
+import { SIDE_INK, sideName } from "./sides";
 import { rankOf } from "./rank";
 
 const formatTime = (iso: string) =>
   new Date(iso).toLocaleString("zh-TW", { dateStyle: "medium", timeStyle: "short" });
-const formatDate = (iso: string) => new Date(iso).toLocaleDateString("zh-TW");
 
-function resultText(g: GameSummary): { text: string; color: string } {
-  if (g.winner === g.mySide) return { text: "勝", color: "#4ade80" };
-  if (g.winner) return { text: `負（${sideName(g.winner)}勝）`, color: "#f87171" };
-  return { text: g.drawReason === "repetition" ? "和（長打）" : "和", color: "#e5e7eb" };
+// 列表上的時間：「10月19日 21:30」，不是今年的才寫年份
+const formatListTime = (iso: string) => {
+  const date = new Date(iso);
+  return date.toLocaleString("zh-TW", {
+    year: date.getFullYear() === new Date().getFullYear() ? undefined : "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+};
+
+// 結果印上的字，和第一行的說明：「黑方勝・積分局」「長打判和・開房」
+function resultOf(g: GameSummary): { seal: "勝" | "負" | "和"; detail: string } {
+  const kind = g.local ? "單機" : g.rating ? "積分局" : "開房";
+  if (g.winner === g.mySide) return { seal: "勝", detail: kind };
+  if (g.winner) return { seal: "負", detail: `${sideName(g.winner)}勝・${kind}` };
+  return { seal: "和", detail: `${g.drawReason === "repetition" ? "長打判和" : "和局"}・${kind}` };
 }
 
 // 對手：「藍方 小明、黑方 電腦」
 const opponents = (g: GameSummary) =>
-  TURN_ORDER.filter((side) => side !== g.mySide).map((side) => {
-    const seat = g.seats[side];
-    return (
-      <span key={side} style={{ color: PANEL_COLORS[side].stroke, marginRight: 8 }}>
-        {sideName(side)} {seat.kind === "ai" ? "電腦" : seat.name}
-      </span>
-    );
-  });
-
-function quotaText(q: ReplayQuota) {
-  if (q.subscribed) return "訂閱中：看棋譜不限次數";
-  const left = Math.max(0, q.limit - q.usedToday);
-  return `今天還能打開 ${left} / ${q.limit} 局（台灣時間午夜重置，今天看過的局重看不扣次數）`;
-}
+  TURN_ORDER.filter((side) => side !== g.mySide)
+    .map((side) => {
+      const seat = g.seats[side];
+      return `${sideName(side)} ${seat.kind === "ai" ? "電腦" : seat.name}`;
+    })
+    .join("、");
 
 type Props = {
-  subscription: SubscriptionInfo | null;
-  payments: PaymentProvider[];
-  fakeBilling: boolean;
-  onSubscriptionChange: (s: SubscriptionInfo | null) => void;
+  onSubscribe: () => void; // 去個人資料訂閱
   onExit: () => void;
 };
 
-export function RecordsPage({
-  subscription,
-  payments,
-  fakeBilling,
-  onSubscriptionChange,
-  onExit,
-}: Props) {
+export function RecordsPage({ onSubscribe, onExit }: Props) {
   // undefined：讀取中；null：讀取失敗
   const [data, setData] = useState<GamesResponse | null | undefined>(undefined);
   const [viewing, setViewing] = useState<GameRecord | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => setData(await fetchGames()), []);
   useEffect(() => {
     let alive = true;
     fetchGames().then((res) => alive && setData(res));
@@ -103,190 +87,123 @@ export function RecordsPage({
     }
   };
 
-  // 成功的話整頁會離開去付款頁，所以不用把 busy 改回來
-  const pay = async (plan: Plan, provider: PaymentProvider) => {
-    setBusy(true);
-    setNotice(null);
-    if (!(await checkout(plan, provider))) {
-      setBusy(false);
-      setNotice("打不開付款頁，請再試一次");
-    }
-  };
-
-  const fakeChange = async (action: Plan | "cancel") => {
-    setBusy(true);
-    const next = action === "cancel" ? ((await fakeCancel()) ? null : undefined) : await fakeSubscribe(action);
-    setBusy(false);
-    if (next === undefined) {
-      setNotice("訂閱狀態更新失敗，請再試一次");
-      return;
-    }
-    setNotice(null);
-    onSubscriptionChange(next);
-    await load();
-  };
-
   return (
-    <Panel style={{ maxWidth: 640 }}>
-      <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
-        <h2 style={{ margin: 0, flex: 1 }}>我的棋譜</h2>
-        <button onClick={onExit}>回大廳</button>
-      </div>
-
-      <SubscriptionBox
-        subscription={subscription}
-        payments={payments}
-        fakeBilling={fakeBilling}
-        busy={busy}
-        onPay={pay}
-        onFake={fakeChange}
-      />
-
-      {data && <p style={{ margin: "12px 0", color: "#cbd5e1" }}>{quotaText(data.quota)}</p>}
-      {notice && <p style={{ margin: "12px 0", color: "#fbbf24" }}>{notice}</p>}
-
-      {data === undefined && <p>讀取中…</p>}
+    <SheetPage title="我的棋譜" onExit={onExit}>
+      {data === undefined && <p className="note">讀取中…</p>}
       {data === null && <p>讀不到棋譜，請確認伺服器有在執行，或重新登入。</p>}
-      {data && data.games.length === 0 && (
-        <p style={{ color: "#94a3b8" }}>
-          還沒有棋譜。登入後下完的連線對局會自動存在這裡（單機對電腦不會存）。
+      {data && <QuotaSection quota={data.quota} onSubscribe={onSubscribe} />}
+      {data && (
+        <section className="sheet-section">
+          <div className="section-head">
+            <h2>對局</h2>
+            {data.games.length > 0 && <span className="note">共 {data.games.length} 局，最新的在上面</span>}
+          </div>
+          {notice && (
+            <p className="note" role="alert" style={{ color: "var(--vermilion)" }}>
+              {notice}
+            </p>
+          )}
+          {data.games.length === 0 ? (
+            <p className="note">還沒有棋譜。登入後下完的對局（連線和單機）會自動存在這裡。</p>
+          ) : (
+            <ul className="records">
+              {data.games.map((g) => (
+                <RecordRow
+                  key={g.id}
+                  game={g}
+                  free={g.viewedToday || data.quota.subscribed}
+                  busy={busy}
+                  onOpen={() => open(g)}
+                />
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+    </SheetPage>
+  );
+}
+
+// 今天還能看幾局：大字數字＋格子（實心是還能看的）
+function QuotaSection({ quota, onSubscribe }: { quota: ReplayQuota; onSubscribe: () => void }) {
+  if (quota.subscribed) {
+    return (
+      <section className="sheet-section">
+        <h2>今天還能看</h2>
+        <p>訂閱中，看棋譜不限次數</p>
+      </section>
+    );
+  }
+  const left = Math.max(0, quota.limit - quota.usedToday);
+  return (
+    <section className="sheet-section">
+      <h2>今天還能看</h2>
+      <div className="quota">
+        <p className="quota-count">
+          <b>{left}</b> / {quota.limit} 局
         </p>
-      )}
-      {data && data.games.length > 0 && (
-        <ul style={{ listStyle: "none", margin: 0, padding: 0, maxHeight: "50vh", overflowY: "auto" }}>
-          {data.games.map((g) => {
-            const result = resultText(g);
-            return (
-              <li
-                key={g.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  padding: "10px 0",
-                  borderTop: "1px solid #1e293b",
-                }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div>
-                    <span style={{ color: PANEL_COLORS[g.mySide].stroke }}>{sideName(g.mySide)}</span>
-                    <span style={{ color: result.color, fontWeight: "bold", marginLeft: 8 }}>
-                      {result.text}
-                    </span>
-                    {g.rating && <RatingDiff change={g.rating} />}
-                    <span style={{ color: "#94a3b8", marginLeft: 8, fontSize: 13 }}>
-                      {formatTime(g.finishedAt)}・{g.moveCount} 步
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 13, marginTop: 2 }}>對手：{opponents(g)}</div>
-                </div>
-                <button disabled={busy} onClick={() => open(g)}>
-                  {g.viewedToday || data.quota.subscribed ? "重播" : "重播（用 1 次）"}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </Panel>
+        <span className="quota-pips" aria-hidden>
+          {Array.from({ length: quota.limit }, (_, i) => (
+            <span key={i} className={i < quota.limit - left ? "used" : ""} />
+          ))}
+        </span>
+      </div>
+      <p className="note">台灣時間午夜重置；今天看過的局再看不扣次數</p>
+      <p>
+        <button className="sheet-link" onClick={onSubscribe}>
+          訂閱後不限次數
+        </button>
+      </p>
+    </section>
   );
 }
 
-// 積分對局：這局加減多少分
-function RatingDiff({ change }: { change: RatingChange }) {
-  const diff = change.after - change.before;
-  return (
-    <span
-      style={{ marginLeft: 8, fontSize: 13, color: diff >= 0 ? "#4ade80" : "#f87171" }}
-      title={`積分 ${change.before} → ${change.after}（${rankOf(change.after).label}）`}
-    >
-      積分 {diff >= 0 ? `+${diff}` : diff}
-    </span>
-  );
-}
-
-const PLANS = Object.keys(PLAN_NAMES) as Plan[];
-
-// 訂閱狀態與購買按鈕：每個金流一排（藍新收台幣、PayPal 收美金）。
-// 不會自動續扣，訂閱中再買就從原本的到期日往後延
-function SubscriptionBox({
-  subscription,
-  payments,
-  fakeBilling,
+// 一局：左邊結果印，中間我方/結果/積分、對手、時間，右邊復盤
+function RecordRow({
+  game,
+  free,
   busy,
-  onPay,
-  onFake,
+  onOpen,
 }: {
-  subscription: SubscriptionInfo | null;
-  payments: PaymentProvider[];
-  fakeBilling: boolean;
+  game: GameSummary;
+  free: boolean; // 今天看過或訂閱中，不扣次數
   busy: boolean;
-  onPay: (plan: Plan, provider: PaymentProvider) => void;
-  onFake: (action: Plan | "cancel") => void;
+  onOpen: () => void;
 }) {
-  const box = {
-    padding: 12,
-    borderRadius: 8,
-    border: "1px solid #334155",
-    background: "#0b1324",
-  } as const;
-  const row = { display: "flex", alignItems: "center", gap: 8, marginTop: 8, flexWrap: "wrap" } as const;
-  const label = { width: 150, fontSize: 13, color: "#94a3b8" } as const;
-
+  const { seal, detail } = resultOf(game);
+  const diff = game.rating && game.rating.after - game.rating.before;
   return (
-    <div style={box}>
-      {subscription ? (
-        <div>
-          <strong style={{ color: "#facc15" }}>{PLAN_NAMES[subscription.plan]}</strong>
-          ：訂閱到 {formatDate(subscription.until)}
-          {payments.length > 0 && (
-            <span style={{ fontSize: 13, color: "#94a3b8" }}>（不會自動扣款，再買一期會往後延）</span>
-          )}
-        </div>
-      ) : (
-        <div>訂閱後，看自己的棋譜不限次數</div>
-      )}
-
-      {payments.map((provider) => (
-        <div key={provider} style={row}>
-          <span style={label}>{PAYMENT_NAMES[provider]}</span>
-          {PLANS.map((plan) => (
-            <button
-              key={plan}
-              style={{ flex: 1 }}
-              disabled={busy}
-              onClick={() => onPay(plan, provider)}
+    <li className="record">
+      <span className={`record-seal ${seal === "勝" ? "win" : seal === "負" ? "loss" : "draw"}`}>{seal}</span>
+      <div className="record-info">
+        <p className="record-head">
+          <span className="record-side" style={{ color: SIDE_INK[game.mySide] }}>
+            {sideName(game.mySide)}
+          </span>
+          <span className="note">{detail}</span>
+          {game.rating && diff !== null && (
+            <span
+              className="record-rating"
+              style={{ color: diff >= 0 ? "var(--green)" : "var(--vermilion)" }}
+              title={`積分 ${game.rating.before} → ${game.rating.after}（${rankOf(game.rating.after).label}）`}
             >
-              {PLAN_NAMES[plan]} {formatPrice(provider, plan)}
-            </button>
-          ))}
-        </div>
-      ))}
-
-      {fakeBilling && (
-        <div style={row}>
-          <span style={label}>開發用（不收費）</span>
-          {PLANS.map((plan) => (
-            <button key={plan} style={{ flex: 1 }} disabled={busy} onClick={() => onFake(plan)}>
-              {PLAN_NAMES[plan]}
-            </button>
-          ))}
-          {subscription && (
-            <button disabled={busy} onClick={() => onFake("cancel")}>
-              取消訂閱
-            </button>
+              積分 {diff >= 0 ? `+${diff}` : `−${-diff}`}
+            </span>
           )}
-        </div>
-      )}
-
-      {!subscription && !payments.length && !fakeBilling && (
-        <div style={{ marginTop: 8, fontSize: 13, color: "#94a3b8" }}>付款功能準備中</div>
-      )}
-    </div>
+        </p>
+        <p className="record-opponents">對手：{opponents(game)}</p>
+        <p className="note">
+          {formatListTime(game.finishedAt)}・{game.moveCount} 步
+        </p>
+      </div>
+      <button className="sheet-button" disabled={busy} onClick={onOpen}>
+        {free ? "復盤" : "復盤（用 1 次）"}
+      </button>
+    </li>
   );
 }
 
-// 重播一局：棋盤轉成自己的視角，用右上的棋譜或 ← → 一步一步看
+// 復盤一局：棋盤轉成自己的視角，用右上的棋譜或 ← → 一步一步看
 function ReplayView({ record, onBack }: { record: GameRecord; onBack: () => void }) {
   const game = useMemo(
     () => replay(record.moves, { celestial: record.celestial, skyStart: record.skyStart }),
@@ -317,7 +234,7 @@ function ReplayView({ record, onBack }: { record: GameRecord; onBack: () => void
           </p>
           {incomplete && (
             <p className="note" style={{ color: "var(--vermilion)" }}>
-              這局是舊版規則下的，只能重播前 {game.history.length} 步
+              這局是舊版規則下的，只能復盤前 {game.history.length} 步
             </p>
           )}
           <div className="row">

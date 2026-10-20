@@ -5,6 +5,7 @@ import { MAX_NAME_LENGTH } from "./protocol";
 import { renameMe, saveName } from "./net";
 import { type Settings, updateSettings, useSettings } from "./settings";
 import { SheetPage } from "./SheetPage";
+import { AUTHOR, YEAR } from "./credits";
 
 type Props = {
   name: string;
@@ -114,6 +115,17 @@ export function SettingsPage({ name, loggedIn, onNameSaved, notice, onExit }: Pr
           label="← 上一步、→ 下一步"
         />
         <p className="note">這些設定存在這台電腦的瀏覽器裡，換電腦要再設一次。</p>
+      </section>
+
+      <section className="sheet-section">
+        <h2>關於</h2>
+        <p>三垣・三人象棋</p>
+        <p className="note">
+          © {YEAR} {AUTHOR}{"　"}版權所有，翻印必究
+        </p>
+        <p className="note">
+          字型：霞鶩文楷 TC（LXGW WenKai TC）、Noto Serif TC，皆以 SIL Open Font License 1.1 授權
+        </p>
       </section>
     </SheetPage>
   );

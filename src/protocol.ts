@@ -137,6 +137,17 @@ export type GameSummary = {
   moveCount: number;
   viewedToday: boolean; // 今天打開過的局，再看不扣次數
   rating: RatingChange | null; // 積分對局才有：自己這局前後的積分
+  local: boolean; // 單機對電腦的局
+};
+
+// POST /api/games/local：單機下完一局，登入的話把棋譜傳上來存。
+// 伺服器會從頭重下一遍，棋步不合法或棋局沒結束就不存；勝負也由伺服器自己算
+export type LocalGameUpload = {
+  celestial: boolean;
+  skyStart: number;
+  moves: MoveMsg[];
+  aiSides: Side[]; // 交給電腦的幾家，其他幾家都是自己
+  startedAt: string; // ISO
 };
 
 export type GameRecord = GameSummary & GameSetup & { moves: MoveMsg[] };
@@ -145,7 +156,7 @@ export type GameRecord = GameSummary & GameSetup & { moves: MoveMsg[] };
 
 export type ProfileStats = {
   rated: { games: number; places: [number, number, number] }; // 積分局：第一、二、三名各幾次
-  all: { games: number; wins: number; draws: number }; // 所有存下來的局（含開房、電腦補位）
+  all: { games: number; wins: number; draws: number }; // 連線對局（含開房、電腦補位，不含單機）
 };
 
 // GET /api/profile

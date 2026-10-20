@@ -43,6 +43,13 @@
       "when": 1792486365597,
       "tag": "0005_payments",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792532868077,
+      "tag": "0006_local_games",
+      "breakpoints": true
     }
   ]
 }
