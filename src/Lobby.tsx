@@ -18,6 +18,7 @@ type Props = {
   onMatch: () => void;
   onJoin: (focusCode: () => void) => void; // 沒填房號時會叫它把游標移到房號
   onLocal: () => void;
+  onRules: () => void;
   onRecords: () => void;
   onProfile: () => void;
   onSettings: () => void;
@@ -41,6 +42,13 @@ export function Lobby(props: Props) {
         </section>
 
         <AccountFold {...props} />
+
+        <section className="fold">
+          <button className="action" onClick={props.onRules}>
+            <span className="action-label">規則</span>
+            <span className="action-desc">走法、天象與勝負</span>
+          </button>
+        </section>
 
         <MatchFold {...props} />
 

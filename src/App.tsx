@@ -1,4 +1,4 @@
-// 進站流程：封面 → 大廳（單機、建房、加入、積分配對、個人資料、我的棋譜、設定）→ 對局
+// 進站流程：封面 → 大廳（單機、建房、加入、積分配對、規則、個人資料、我的棋譜、設定）→ 對局
 
 import { useEffect, useState } from "react";
 import type { MeResponse } from "./protocol";
@@ -9,6 +9,7 @@ import { RecordsPage } from "./Records";
 import { ProfilePage } from "./Profile";
 import { SettingsPage } from "./SettingsPage";
 import { Lobby } from "./Lobby";
+import { RulesPage } from "./RulesPage";
 
 type Mode =
   | { kind: "menu" }
@@ -16,6 +17,7 @@ type Mode =
   | { kind: "online"; action: OnlineAction }
   | { kind: "records" }
   | { kind: "profile" }
+  | { kind: "rules" }
   | { kind: "settings"; notice?: string };
 
 // 邀請連結帶的房號：?room=ABCDE
@@ -141,6 +143,7 @@ export default function App() {
       />
     );
   }
+  if (mode.kind === "rules") return <RulesPage onExit={() => backToMenu()} />;
   if (mode.kind === "settings") {
     return (
       <SettingsPage
@@ -197,6 +200,7 @@ export default function App() {
         setNotice(null);
         setMode({ kind: "local" });
       }}
+      onRules={() => setMode({ kind: "rules" })}
       onRecords={() => setMode({ kind: "records" })}
       onProfile={() => setMode({ kind: "profile" })}
       onSettings={() => setMode({ kind: "settings" })}
