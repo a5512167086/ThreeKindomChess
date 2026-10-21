@@ -12,6 +12,7 @@ import {
 import { checkout, fakeCancel, fakeSubscribe, fetchProfile } from "./net";
 import { POINTS_PER_DIVISION, rankOf } from "./rank";
 import { SheetPage } from "./SheetPage";
+import { SUPPORT_EMAIL } from "./credits";
 
 const PLANS = Object.keys(PLAN_NAMES) as Plan[];
 
@@ -51,7 +52,7 @@ export function ProfilePage({ onExit, ...billing }: Billing & { onExit: () => vo
 
 function ProfileBody({ profile }: { profile: ProfileResponse }) {
   const rank = rankOf(profile.rating);
-  const { rated, all } = profile.stats;
+  const { rated } = profile.stats;
   const into = profile.rating % POINTS_PER_DIVISION;
 
   return (
@@ -101,9 +102,6 @@ function ProfileBody({ profile }: { profile: ProfileResponse }) {
             )}
           </div>
         </div>
-        {profile.ratedGames === 0 && (
-          <p className="note">還沒下過積分局。從大廳的「積分配對」開始，前十局升降得比較快。</p>
-        )}
       </section>
 
       <section className="sheet-section">
@@ -115,9 +113,6 @@ function ProfileBody({ profile }: { profile: ProfileResponse }) {
           <Stat label="第二名" value={rated.places[1]} />
           <Stat label="第三名" value={rated.places[2]} />
         </dl>
-        <p className="note">
-          連線對局 {all.games} 局（含開房、電腦補位，不含單機）：勝 {all.wins}、和 {all.draws}
-        </p>
       </section>
 
     </>
@@ -153,12 +148,9 @@ function SubscriptionSection({ subscription, payments, fakeBilling, onSubscripti
     <section className="sheet-section">
       <h2>訂閱</h2>
       {subscription ? (
-        <>
-          <p>
-            {PLAN_NAMES[subscription.plan]}，到 {formatDate(subscription.until)}
-          </p>
-          {payments.length > 0 && <p className="note">不會自動扣款，再買一期會從到期日往後延</p>}
-        </>
+        <p>
+          {PLAN_NAMES[subscription.plan]}，到 {formatDate(subscription.until)}
+        </p>
       ) : (
         <p>還沒訂閱。免費帳號每天可以打開三局棋譜，訂閱後不限次數。</p>
       )}
@@ -190,6 +182,14 @@ function SubscriptionSection({ subscription, payments, fakeBilling, onSubscripti
       )}
 
       {!subscription && !payments.length && !fakeBilling && <p className="note">付款功能準備中</p>}
+      {payments.length > 0 && (
+        <p className="note">
+          任何關於訂閱的問題請來信{" "}
+          <a className="sheet-link" href={`mailto:${SUPPORT_EMAIL}`}>
+            {SUPPORT_EMAIL}
+          </a>
+        </p>
+      )}
       {error && (
         <p className="note" role="alert" style={{ color: "var(--vermilion)" }}>
           {error}

@@ -451,11 +451,12 @@
   padding: 10px 0 14px;
   border-top: 1px solid var(--fold);
 }
+/* 固定高度：訊息多了在裡面捲，便箋不會越長越高蓋住棋盤 */
 .chat-lines {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 150px;
+  height: 120px;
   overflow-y: auto;
 }
 .chat-lines .hint {

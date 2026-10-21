@@ -5,7 +5,7 @@
 
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import type { Side } from "./rules";
-import { type GameState, TURN_ORDER, play, replay } from "./game";
+import { type GameState, TURN_ORDER, replay, step, stepCount } from "./game";
 import { type ChatMessage, type RatingChange, type RoomView, ROOM_SIZE } from "./protocol";
 import { type GameSocket, connect, saveRoom } from "./net";
 import { type Clock, fromClockView } from "./clock";
@@ -56,7 +56,7 @@ export function OnlineGame({
     const socket = connect(name);
     socketRef.current = socket;
     let pending: OnlineAction | null = action;
-    let inRoom = false;
+    let roomCode: string | null = null;
     let current: GameState | null = null;
     const setGameState = (g: GameState | null) => {
       current = g;
@@ -77,20 +77,22 @@ export function OnlineGame({
     socket.on("room:state", (r) => {
       setRoom(r);
       saveRoom(r?.code ?? null);
-      if (!r) {
+      // 離開房間或換到別的房間：原本的棋局和密談不要了
+      if (r?.code !== roomCode) {
         setGameState(null);
         setChats([]);
-        if (inRoom) onExitRef.current("你已離開房間");
       }
-      inRoom = !!r;
+      if (!r && roomCode) onExitRef.current("你已離開房間");
+      roomCode = r?.code ?? null;
 
-      // 連上後第一次收到房間狀態：已經在房間裡就是重連，否則執行要做的事
+      // 連上後第一次收到房間狀態：已經在房間裡就是重連，否則執行要做的事。
+      // 要加入的是別的房間（點了新的邀請連結）就換過去
       if (!pending) return;
       const todo = pending;
       pending = null;
-      if (r) return;
-      if (todo.type === "create") socket.emit("room:create", report);
-      else if (todo.type === "join") socket.emit("room:join", todo.code, report);
+      if (todo.type === "join" && r?.code !== todo.code) socket.emit("room:join", todo.code, report);
+      else if (r) return;
+      else if (todo.type === "create") socket.emit("room:create", report);
       else if (todo.type === "match") socket.emit("match:find", report);
       else onExitRef.current("原本的房間已經不在了");
     });
@@ -103,11 +105,11 @@ export function OnlineGame({
     });
     socket.on("game:move", (move, index, clockView) => {
       // 步數對不上（例如漏收）就請伺服器重送整盤
-      if (!current || index !== current.history.length) {
+      if (!current || index !== stepCount(current)) {
         socket.emit("game:resync");
         return;
       }
-      const next = play(current, move.pieceId, move.to);
+      const next = step(current, move);
       if (next === current) {
         socket.emit("game:resync");
         return;

@@ -5,7 +5,7 @@ import { MAX_NAME_LENGTH } from "./protocol";
 import { renameMe, saveName } from "./net";
 import { type Settings, updateSettings, useSettings } from "./settings";
 import { SheetPage } from "./SheetPage";
-import { AUTHOR, YEAR } from "./credits";
+import { AUTHOR, SUPPORT_EMAIL, YEAR } from "./credits";
 
 type Props = {
   name: string;
@@ -120,6 +120,12 @@ export function SettingsPage({ name, loggedIn, onNameSaved, notice, onExit }: Pr
       <section className="sheet-section">
         <h2>關於</h2>
         <p>三垣・三人象棋</p>
+        <p>
+          客服信箱：
+          <a className="sheet-link" href={`mailto:${SUPPORT_EMAIL}`}>
+            {SUPPORT_EMAIL}
+          </a>
+        </p>
         <p className="note">
           © {YEAR} {AUTHOR}{"　"}版權所有，翻印必究
         </p>

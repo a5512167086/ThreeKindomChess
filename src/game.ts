@@ -2,6 +2,8 @@
 //
 // - 走完之後自己的將不能被任何一家吃到（不允許送將）
 // - 將被吃掉的一方出局，剩下的棋子全部歸吃將的人
+// - 局時用完的一方出局，他的棋子凍結在棋盤上：不能動、不威脅別人，但可以被吃
+//   （吃到凍結的將也只是吃一顆子，不接收棋子）
 // - 輪到的人沒有合法步可走（被將死或困斃）就跳過，直到將真的被吃掉
 // - 場上只剩一家就贏；所有人都沒棋可走則和局
 // - 長將、長捉（長打）：同一局面第 3 次出現時，循環中每步都在將軍或捉子的人
@@ -44,6 +46,8 @@ export type GameState = {
   alive: Side[]; // 還在場上的玩家（照輪流順序）
   turn: Side | null; // 輪到誰；棋局結束為 null
   winner: Side | null;
+  out: Side[]; // 出局的玩家（照出局順序）
+  timedOut: Side[]; // 其中超時出局的
   drawReason: "noMoves" | "repetition" | null; // 和局原因
   skipped: Side[]; // 上一步之後因為無棋可走被跳過的玩家
   celestial: boolean; // 有沒有星象；false = 古典規則
@@ -54,11 +58,11 @@ export type GameState = {
   history: HistoryEntry[];
 };
 
-// 局面識別：所有棋子（主人、原主人、種類、位置）＋ 剛走完的人 ＋ 當時的四象
+// 局面識別：所有棋子（主人、原主人、種類、位置、凍結的加「~」）＋ 剛走完的人 ＋ 當時的四象
 // ＋ 走完的人是不是還要再走（朱雀的第一步，結尾加「+」）
 const positionKey = (pieces: Piece[], mover: Side, phase: Phase | null, again = false) =>
   pieces
-    .map((p) => `${p.owner}/${p.origin}/${p.kind}/${posKey(p.pos)}`)
+    .map((p) => `${p.owner}/${p.origin}/${p.kind}/${posKey(p.pos)}${p.frozen ? "~" : ""}`)
     .sort()
     .join("|") + `#${mover}${phase ? `@${phase}` : ""}${again ? "+" : ""}`;
 
@@ -75,6 +79,8 @@ export function newGame({
     alive: [...TURN_ORDER],
     turn: TURN_ORDER[0],
     winner: null,
+    out: [],
+    timedOut: [],
     drawReason: null,
     skipped: [],
     celestial,
@@ -114,16 +120,19 @@ const attacks = (
   phase: Phase | null
 ) => pieceMoves(pieces, attacker, phase).some((t) => samePos(t, target));
 
-// 某一方的將是否會被其他玩家吃到（各家用自己下一次走棋時的四象）
+// 某一方的將是否會被其他玩家吃到（各家用自己下一次走棋時的四象；凍結的子不算）
 export function inCheck(pieces: Piece[], side: Side, phases: PhaseOf): boolean {
   const general = pieces.find((p) => p.owner === side && p.kind === "general");
-  if (!general) return false;
+  if (!general || general.frozen) return false;
   return pieces.some(
-    (p) => p.owner !== side && attacks(pieces, p, general.pos, phases(p.owner))
+    (p) =>
+      p.owner !== side &&
+      !p.frozen &&
+      attacks(pieces, p, general.pos, phases(p.owner))
   );
 }
 
-// 走一步並處理吃將：被吃將的一方出局，剩下的棋子全部歸吃將的人
+// 走一步並處理吃將：被吃將的一方出局，剩下的棋子全部歸吃將的人（凍結的將只是一顆子）
 function resolveMove(
   pieces: Piece[],
   alive: Side[],
@@ -132,7 +141,7 @@ function resolveMove(
 ): { pieces: Piece[]; alive: Side[] } {
   const captured = pieces.find((p) => samePos(p.pos, to));
   const next = applyMove(pieces, piece.id, to);
-  if (captured?.kind !== "general") return { pieces: next, alive };
+  if (captured?.kind !== "general" || captured.frozen) return { pieces: next, alive };
 
   const loser = captured.owner;
   return {
@@ -163,6 +172,7 @@ const givesCheck = (pieces: Piece[], side: Side, phases: PhaseOf) =>
   pieces.some(
     (g) =>
       g.kind === "general" &&
+      !g.frozen &&
       g.owner !== side &&
       pieces.some(
         (p) => p.owner === side && attacks(pieces, p, g.pos, phases(side))
@@ -185,7 +195,7 @@ function chasePairs(
     }
     for (const to of safeMoves(pieces, alive, p, phases)) {
       const target = pieces.find((q) => samePos(q.pos, to));
-      if (!target || target.kind === "general") continue;
+      if (!target || target.kind === "general" || target.frozen) continue;
       if (target.kind === "soldier" && target.pos.panel === target.origin) {
         continue;
       }
@@ -326,6 +336,7 @@ export function play(state: GameState, pieceId: string, to: Pos): GameState {
     ...state,
     pieces: next.pieces,
     alive: next.alive,
+    out: [...state.out, ...state.alive.filter((s) => !next.alive.includes(s))],
     skipped: [],
     extraMove: false,
     history: [...state.history, entry],
@@ -344,29 +355,60 @@ export function play(state: GameState, pieceId: string, to: Pos): GameState {
     if (hasAnyMove(candidate, piece.owner)) return candidate;
   }
 
-  // 找下一個有棋可走的玩家（最後才輪回自己）；都沒有就和局。
-  // 繞過輪流順序的最後一家就進入下一輪，每一家都用自己那一輪的四象判斷
+  return passTurn(base, piece.owner, state.round);
+}
+
+// 從 from 之後找下一個有棋可走的玩家（最後才輪回 from 自己）；都沒有就和局。
+// 繞過輪流順序的最後一家就進入下一輪，每一家都用自己那一輪的四象判斷
+function passTurn(base: GameState, from: Side, round: number): GameState {
   const skipped: Side[] = [];
-  const n = next.alive.length;
-  const start = next.alive.indexOf(piece.owner);
+  const n = TURN_ORDER.length;
+  const start = TURN_ORDER.indexOf(from);
   for (let i = 1; i <= n; i++) {
-    const side = next.alive[(start + i) % n];
-    const round = state.round + (start + i >= n ? 1 : 0);
-    const candidate: GameState = { ...base, turn: side, round, skipped };
+    const side = TURN_ORDER[(start + i) % n];
+    if (!base.alive.includes(side)) continue;
+    const candidate: GameState = {
+      ...base,
+      turn: side,
+      round: round + (start + i >= n ? 1 : 0),
+      skipped,
+    };
     if (hasAnyMove(candidate, side)) return candidate;
     skipped.push(side);
   }
   return { ...base, turn: null, drawReason: "noMoves", skipped };
 }
 
+// 輪到的人局時用完：出局，棋子凍結在原地，換下一家
+export function timeout(state: GameState, side: Side): GameState {
+  if (state.turn !== side) return state;
+  const base: GameState = {
+    ...state,
+    pieces: state.pieces.map((p) => (p.owner === side ? { ...p, frozen: true } : p)),
+    alive: state.alive.filter((s) => s !== side),
+    out: [...state.out, side],
+    timedOut: [...state.timedOut, side],
+    skipped: [],
+    extraMove: false,
+  };
+  if (base.alive.length === 1) return { ...base, turn: null, winner: base.alive[0] };
+  return passTurn(base, side, state.round);
+}
+
+// 棋譜裡的一步：走棋，或輪到的人超時
+export type GameStep = { pieceId: string; to: Pos } | { timeout: Side };
+
+export const step = (state: GameState, s: GameStep): GameState =>
+  "timeout" in s ? timeout(state, s.timeout) : play(state, s.pieceId, s.to);
+
+// 已經套用了幾步（走棋加超時）
+export const stepCount = (state: GameState) => state.history.length + state.timedOut.length;
+
 // 從開局照順序重播一串棋步（連線同步、看棋譜用）；遇到不合法的步就停在那裡
-export function replay(
-  moves: { pieceId: string; to: Pos }[],
-  setup?: Partial<GameSetup>
-): GameState {
+export function replay(moves: GameStep[], setup?: Partial<GameSetup>): GameState {
   let g = newGame(setup);
   for (const m of moves) {
-    const next = play(g, m.pieceId, m.to);
+    const next = step(g, m);
     if (next === g) break;
     g = next;
   }

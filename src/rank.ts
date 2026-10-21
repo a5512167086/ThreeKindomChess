@@ -48,11 +48,7 @@ export function rankOf(points: number): Rank {
 // 贏家（或和局時還在場上的幾家）第一，接著是越晚出局的越前面；
 // 中途離開房間的人一律排最後（越早走的越後面），就算電腦替他下贏了也一樣
 export function placements(game: GameState, quitters: Side[] = []): Side[][] {
-  const out: Side[] = [];
-  game.history.forEach((e, i) => {
-    const after = game.history[i + 1]?.alive ?? game.alive;
-    for (const side of e.alive) if (!after.includes(side)) out.push(side);
-  });
+  const out = [...game.out];
   const top = game.winner ? [game.winner] : [...game.alive];
   const groups = [top, ...out.reverse().map((s) => [s])]
     .map((g) => g.filter((s) => !quitters.includes(s)))

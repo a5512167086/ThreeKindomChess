@@ -5,13 +5,15 @@
 
 import type { Pos, Side } from "./rules";
 import type { ClockView } from "./clock";
-import type { GameSetup } from "./game";
+import type { GameSetup, GameStep } from "./game";
 
 export const ROOM_SIZE = 3;
 export const MAX_NAME_LENGTH = 12;
 export const MAX_CHAT_LENGTH = 200;
 
-export type MoveMsg = { pieceId: string; to: Pos };
+// 玩家送出的一步棋；廣播和棋譜裡的一步還可能是某一家超時
+export type PlayMsg = { pieceId: string; to: Pos };
+export type MoveMsg = GameStep;
 
 export type ChatMessage = { id: number; from: Side; to: Side; text: string };
 
@@ -47,7 +49,7 @@ export interface ClientToServerEvents {
   "room:start": (ack: Ack) => void; // 房主開局；空位由電腦補上
   "match:find": (ack: Ack) => void;
   "match:cancel": () => void;
-  "game:move": (move: MoveMsg, ack: Ack) => void;
+  "game:move": (move: PlayMsg, ack: Ack) => void;
   "game:resync": () => void;
   "chat:send": (to: Side, text: string, ack: Ack) => void;
 }

@@ -33,6 +33,7 @@ export type Piece = {
   origin: Side;
   kind: Kind;
   pos: Pos;
+  frozen?: boolean; // 主人超時出局：留在棋盤上不能動、不威脅別人，但可以被吃
 };
 
 export const SIDES: Side[] = ["Center", "Left", "Right"];

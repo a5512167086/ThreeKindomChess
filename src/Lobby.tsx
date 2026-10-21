@@ -19,6 +19,7 @@ type Props = {
   onJoin: (focusCode: () => void) => void; // 沒填房號時會叫它把游標移到房號
   onLocal: () => void;
   onRules: () => void;
+  onPricing: () => void;
   onRecords: () => void;
   onProfile: () => void;
   onSettings: () => void;
@@ -74,6 +75,13 @@ export function Lobby(props: Props) {
             <span className="action-desc">
               {props.name.trim() ? `暱稱：${props.name.trim()}` : "取個暱稱、調整對弈輔助"}
             </span>
+          </button>
+        </section>
+
+        <section className="fold">
+          <button className="action" onClick={props.onPricing}>
+            <span className="action-label">訂閱與客服</span>
+            <span className="action-desc">價格、收費方式與客服信箱</span>
           </button>
         </section>
 

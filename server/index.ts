@@ -16,7 +16,7 @@ import { createCheckout } from "./checkout";
 import { createStaticHandler } from "./static";
 import { ratingOf, saveGame } from "./records";
 import { type QueueEntry, pickMatch, placements } from "../src/rank";
-import { type GameSetup, type GameState, TURN_ORDER, chatOpen, newGame, play } from "../src/game";
+import { type GameSetup, type GameState, TURN_ORDER, chatOpen, newGame, step } from "../src/game";
 import { randomSkyStart } from "../src/sky";
 import { chooseMove } from "../src/ai";
 import {
@@ -32,6 +32,7 @@ import {
   type ClientToServerEvents,
   type HandshakeAuth,
   type MoveMsg,
+  type PlayMsg,
   type RatingChange,
   type RecordSeat,
   type RoomStatus,
@@ -122,7 +123,7 @@ type Room = {
   chats: ChatMessage[];
   clock: Clock | null;
   aiTimer: NodeJS.Timeout | null;
-  timeoutTimer: NodeJS.Timeout | null; // 輪到的人超時就代走一步
+  timeoutTimer: NodeJS.Timeout | null; // 輪到的人局時用完就判出局
   idleTimer: NodeJS.Timeout | null;
 };
 
@@ -328,8 +329,9 @@ function deleteRoom(room: Room) {
   rooms.delete(room.code);
 }
 
-// 玩家離開房間；對局中離開的話由電腦接手他的座位
-function removeMember(room: Room, playerId: string) {
+// 玩家離開房間；對局中離開的話由電腦接手他的座位。
+// notify = false：要直接換到別的房間，不用先告訴他「已經不在房間裡」
+function removeMember(room: Room, playerId: string, notify = true) {
   const timer = leaveTimers.get(playerId);
   if (timer) clearTimeout(timer);
   leaveTimers.delete(playerId);
@@ -339,7 +341,7 @@ function removeMember(room: Room, playerId: string) {
   if (player) player.roomCode = null;
   const socket = socketOf(playerId);
   socket?.leave(room.code);
-  socket?.emit("room:state", null);
+  if (notify) socket?.emit("room:state", null);
 
   const side = seatOf(room, playerId);
   if (side && room.rated && room.status === "playing") room.quitters.push(side);
@@ -407,7 +409,7 @@ function applyMove(room: Room, move: MoveMsg): boolean {
   if (!room.game || !room.clock || !mover || room.status !== "playing") {
     return false;
   }
-  const next = play(room.game, move.pieceId, move.to);
+  const next = step(room.game, move);
   if (next === room.game) return false;
 
   room.game = next;
@@ -485,7 +487,7 @@ const setupOf = (game: GameState): GameSetup => ({
 const clockView = (room: Room) =>
   toClockView(room.clock ?? newClock(Date.now()), Date.now());
 
-// 輪到的人局時加讀秒都用完：由電腦代走一步，下一步仍由他自己下
+// 輪到的人局時用完：出局（棋子凍結在棋盤上），換下一家
 function scheduleTimeout(room: Room) {
   if (room.timeoutTimer) clearTimeout(room.timeoutTimer);
   room.timeoutTimer = null;
@@ -494,9 +496,7 @@ function scheduleTimeout(room: Room) {
   const wait = Math.max(0, deadline(room.clock, turn) - Date.now());
   room.timeoutTimer = setTimeout(() => {
     room.timeoutTimer = null;
-    if (!room.game) return;
-    const move = chooseMove(room.game);
-    if (move) applyMove(room, move);
+    if (room.game?.turn === turn) applyMove(room, { timeout: turn });
   }, wait);
 }
 
@@ -556,8 +556,8 @@ setInterval(() => {
 const isSide = (v: unknown): v is Side =>
   typeof v === "string" && (TURN_ORDER as string[]).includes(v);
 
-const isMove = (v: unknown): v is MoveMsg => {
-  const m = v as MoveMsg;
+const isMove = (v: unknown): v is PlayMsg => {
+  const m = v as PlayMsg;
   return (
     !!m &&
     typeof m.pieceId === "string" &&
@@ -639,14 +639,13 @@ io.on("connection", (socket: GameSocket) => {
     const code = String(rawCode ?? "").trim().toUpperCase();
     const room = rooms.get(code);
     if (!room) return ack({ ok: false, error: "找不到這個房間" });
-    const existing = myRoom();
-    if (existing && existing !== room) {
-      return ack({ ok: false, error: "你已經在別的房間裡了" });
-    }
     if (!room.memberIds.includes(playerId)) {
       if (room.status !== "waiting") return ack({ ok: false, error: "這局已經開始了" });
       if (room.memberIds.length >= ROOM_SIZE) return ack({ ok: false, error: "房間已滿" });
     }
+    // 還在別的房間（例如沒按離開就關掉網頁）又點了新的邀請連結：離開原本的房間，對局中就由電腦接手
+    const existing = myRoom();
+    if (existing && existing !== room) removeMember(existing, playerId, false);
     addMember(room, playerId);
     ack({ ok: true });
   });

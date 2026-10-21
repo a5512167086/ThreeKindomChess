@@ -62,8 +62,8 @@ const rightOf = (side: Side) =>
 const leftOf = (side: Side) =>
   TURN_ORDER[(TURN_ORDER.indexOf(side) + TURN_ORDER.length - 1) % TURN_ORDER.length];
 
-// 讀秒剩這麼少時轉紅色
-const CLOCK_WARN_MS = 10_000;
+// 局時剩這麼少時加粗
+const CLOCK_WARN_MS = 60_000;
 
 // 四象在紙上的顏色：青龍青綠、玄武墨、白虎灰、朱雀朱砂
 const PHASE_INK: Record<Phase, string> = {
@@ -403,6 +403,7 @@ export function GameView({
             game.alive.length < TURN_ORDER.length && (
               <span className="alert-quiet">
                 出局：{sideList(TURN_ORDER.filter((s) => !game.alive.includes(s)))}
+                {game.timedOut.length > 0 && `（${sideList(game.timedOut)}超時）`}
               </span>
             )}
         </p>
@@ -416,24 +417,19 @@ export function GameView({
             {TURN_ORDER.map((side) => {
               const left = timeLeft(clock, side, currentSide, now);
               const active = side === currentSide;
-              const byoyomi = left.main <= 0;
               const out = !game.alive.includes(side);
               return (
                 <li
                   key={side}
                   className={out ? "out" : active ? "active" : undefined}
-                  title={`${seatName(side)}${byoyomi ? "（讀秒）" : ""}`}
+                  title={`${seatName(side)}${game.timedOut.includes(side) ? "（超時）" : ""}`}
                 >
                   <SideSeal side={side} />
                   <span
                     className="time"
-                    style={
-                      byoyomi && active && left.byoyomi <= CLOCK_WARN_MS
-                        ? { fontWeight: 700 }
-                        : undefined
-                    }
+                    style={active && left <= CLOCK_WARN_MS ? { fontWeight: 700 } : undefined}
                   >
-                    {formatTime(byoyomi ? left.byoyomi : left.main)}
+                    {formatTime(left)}
                   </span>
                 </li>
               );

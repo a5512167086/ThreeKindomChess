@@ -10,13 +10,14 @@ import type {
   GameSummary,
   LocalGameUpload,
   MoveMsg,
+  PlayMsg,
   ProfileStats,
   RatingChange,
   RecordSeat,
   ReplayQuota,
 } from "../src/protocol";
 import type { Side } from "../src/rules";
-import { TURN_ORDER, newGame, play } from "../src/game";
+import { TURN_ORDER, newGame, step } from "../src/game";
 import { MANSIONS } from "../src/sky";
 import { placements, rate } from "../src/rank";
 
@@ -54,7 +55,8 @@ export type FinishedGame = {
 const isSide = (v: unknown): v is Side => TURN_ORDER.includes(v as Side);
 const isIndex = (v: unknown) => Number.isInteger(v) && (v as number) >= 0 && (v as number) < 16;
 const isMove = (v: unknown): v is MoveMsg => {
-  const m = v as MoveMsg | null;
+  const m = v as Partial<PlayMsg & { timeout: unknown }> | null;
+  if (m && "timeout" in m) return isSide(m.timeout);
   return (
     typeof m?.pieceId === "string" &&
     m.pieceId.length <= 32 &&
@@ -63,6 +65,12 @@ const isMove = (v: unknown): v is MoveMsg => {
     isIndex(m.to.col)
   );
 };
+
+// 只留需要的欄位；jsonb 存的時候也會重排物件的欄位順序，讀出來時排回原本的樣子
+const cleanMove = (m: MoveMsg): MoveMsg =>
+  "timeout" in m
+    ? { timeout: m.timeout }
+    : { pieceId: m.pieceId, to: { panel: m.to.panel, row: m.to.row, col: m.to.col } };
 
 // 單機傳上來的棋譜：從頭重下一遍，每一步都要合法、最後要分出結果，才回傳要存的內容。
 // 勝負、和局原因、名次都用重下的結果，不信任傳上來的
@@ -84,7 +92,7 @@ export function localGameFrom(
   let game = newGame({ celestial: b.celestial, skyStart: b.skyStart });
   try {
     for (const move of b.moves) {
-      const next = play(game, move.pieceId, move.to);
+      const next = step(game, move);
       if (next === game) return null;
       game = next;
     }
@@ -106,7 +114,7 @@ export function localGameFrom(
   return {
     celestial: b.celestial,
     skyStart: b.skyStart!,
-    moves: b.moves.map(({ pieceId, to }) => ({ pieceId, to: { panel: to.panel, row: to.row, col: to.col } })),
+    moves: b.moves.map(cleanMove),
     seats: Object.fromEntries(
       TURN_ORDER.map((side): [Side, RecordSeat] => [
         side,
@@ -347,11 +355,7 @@ export async function openGame(
       local: g.local,
       celestial: g.celestial,
       skyStart: g.skyStart,
-      // jsonb 存的時候會重排物件的欄位順序，這裡排回原本的樣子
-      moves: g.moves.map(({ pieceId, to }) => ({
-        pieceId,
-        to: { panel: to.panel, row: to.row, col: to.col },
-      })),
+      moves: g.moves.map(cleanMove),
     },
     quota: await quotaOf(db, userId, now),
   };

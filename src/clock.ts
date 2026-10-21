@@ -1,14 +1,11 @@
-// 計時：局時 + 讀秒（純函式，前後端共用）
+// 計時：局時（純函式，前後端共用）
 //
-// 每人有一筆局時，輪到自己時才扣；局時用完後進入讀秒，
-// 之後每一步都要在讀秒時間內走完。讀秒也用完（超時）就由電腦代走一步，
-// 下一步仍然是讀秒。
+// 每人有一筆局時，輪到自己時才扣；局時用完就出局（game.ts 的 timeout）。
 
 import type { Side } from "./rules";
 import { TURN_ORDER } from "./game";
 
 export const MAIN_TIME_MS = 20 * 60_000; // 局時 20 分鐘
-export const BYOYOMI_MS = 90_000; // 讀秒 90 秒
 
 export type Clock = {
   main: Record<Side, number>; // 各家剩下的局時（不含這一步正在用的）
@@ -38,22 +35,12 @@ export const afterMove = (c: Clock, mover: Side, now: number): Clock => ({
   startedAt: now,
 });
 
-// 某一家目前剩下的局時與讀秒
-export function timeLeft(
-  c: Clock,
-  side: Side,
-  turn: Side | null,
-  now: number
-): { main: number; byoyomi: number } {
-  const main = c.main[side] - (side === turn ? elapsed(c, now) : 0);
-  return main >= 0
-    ? { main, byoyomi: BYOYOMI_MS }
-    : { main: 0, byoyomi: Math.max(0, BYOYOMI_MS + main) };
-}
+// 某一家目前剩下的局時
+export const timeLeft = (c: Clock, side: Side, turn: Side | null, now: number) =>
+  Math.max(0, c.main[side] - (side === turn ? elapsed(c, now) : 0));
 
 // 輪到 side 時，過了這個時間點就超時
-export const deadline = (c: Clock, side: Side) =>
-  c.startedAt + c.main[side] + BYOYOMI_MS;
+export const deadline = (c: Clock, side: Side) => c.startedAt + c.main[side];
 
 export const pauseClock = (c: Clock, now: number): Clock =>
   c.pausedAt === null ? { ...c, pausedAt: now } : c;

@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Pos, Side } from "./rules";
-import { type GameState, TURN_ORDER, newGame, play } from "./game";
+import { type GameState, TURN_ORDER, newGame, step } from "./game";
 import { chooseMove } from "./ai";
 import { randomSkyStart } from "./sky";
 import {
@@ -35,12 +35,12 @@ const startMatch = (celestial: boolean): Match => ({
   startedAt: new Date().toISOString(),
 });
 
-function applyMove(m: Match, pieceId: string, to: Pos, now: number): Match {
+function applyMove(m: Match, move: MoveMsg, now: number): Match {
   const mover = m.game.turn;
   if (!mover) return m;
-  const game = play(m.game, pieceId, to);
+  const game = step(m.game, move);
   if (game === m.game) return m;
-  return { ...m, game, clock: afterMove(m.clock, mover, now), moves: [...m.moves, { pieceId, to }] };
+  return { ...m, game, clock: afterMove(m.clock, mover, now), moves: [...m.moves, move] };
 }
 
 type SaveStatus = "saved" | "failed";
@@ -72,7 +72,7 @@ export function LocalGame({ loggedIn, onExit }: { loggedIn: boolean; onExit: () 
     const move = chooseMove(from);
     if (move) {
       setMatch((m) =>
-        m.game === from ? applyMove(m, move.pieceId, move.to, Date.now()) : m
+        m.game === from ? applyMove(m, move, Date.now()) : m
       );
     }
   };
@@ -84,12 +84,15 @@ export function LocalGame({ loggedIn, onExit }: { loggedIn: boolean; onExit: () 
     return () => clearTimeout(timer);
   }, [game, aiTurn, reviewing]);
 
-  // 超時：局時加讀秒都用完，由電腦代走一步
+  // 局時用完：出局
   useEffect(() => {
     const turn = game.turn;
     if (!turn || reviewing) return;
     const wait = Math.max(0, deadline(clock, turn) - Date.now());
-    const timer = setTimeout(() => playFor(game), wait);
+    const timer = setTimeout(
+      () => setMatch((m) => (m.game === game ? applyMove(m, { timeout: turn }, Date.now()) : m)),
+      wait
+    );
     return () => clearTimeout(timer);
   }, [game, clock, reviewing]);
 
@@ -122,7 +125,7 @@ export function LocalGame({ loggedIn, onExit }: { loggedIn: boolean; onExit: () 
   };
 
   const onMove = (pieceId: string, to: Pos) =>
-    setMatch((m) => applyMove(m, pieceId, to, Date.now()));
+    setMatch((m) => applyMove(m, { pieceId, to }, Date.now()));
 
   const onSendChat = (to: Side, text: string) =>
     setChats((c) => [...c, { id: c.length, from: ME, to, text }]);

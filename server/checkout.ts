@@ -44,7 +44,7 @@ export function createCheckout(db: Db, config: CheckoutConfig) {
     ...(newebpay ? (["newebpay"] as const) : []),
     ...(paypal ? (["paypal"] as const) : []),
   ];
-  const itemDesc = (plan: Plan) => `三國象棋 ${PLAN_NAMES[plan]}`;
+  const itemDesc = (plan: Plan) => `三垣 ${PLAN_NAMES[plan]}`;
   const back = (res: ServerResponse, outcome: Outcome) =>
     redirect(res, `${publicOrigin}/?billing=${outcome}`);
 

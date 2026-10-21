@@ -94,6 +94,42 @@
   text-underline-offset: 3px;
   cursor: pointer;
 }
+.sheet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 1.4em;
+}
+
+/* ---- 訂閱與客服 ---- */
+
+/* 窄螢幕放不下就表格自己左右捲，整頁不要跟著橫捲 */
+.price-table-wrap {
+  overflow-x: auto;
+}
+.price-table {
+  border-collapse: collapse;
+  white-space: nowrap;
+}
+.price-table th,
+.price-table td {
+  padding: 8px 16px 8px 0;
+  border-bottom: 1px solid var(--fold);
+  text-align: left;
+}
+.price-table thead th {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--grey-ink);
+}
+.price-table tbody th {
+  font-family: var(--kai);
+  font-weight: 700;
+}
+.price-table td {
+  font-variant-numeric: tabular-nums;
+}
 
 /* ---- 個人資料 ---- */
 

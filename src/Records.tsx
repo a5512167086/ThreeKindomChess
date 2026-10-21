@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { Side } from "./rules";
-import { TURN_ORDER, replay } from "./game";
+import { TURN_ORDER, replay, stepCount } from "./game";
 import { type GameRecord, type GameSummary, type GamesResponse, type ReplayQuota } from "./protocol";
 import { fetchGames, openGame } from "./net";
 import { GameView } from "./GameView";
@@ -215,7 +215,7 @@ function ReplayView({ record, onBack }: { record: GameRecord; onBack: () => void
     return `${sideName(side)}（${who}）`;
   };
   // 規則改過之後，舊棋譜可能在某一步變成不合法，只能播到那裡
-  const incomplete = game.history.length < record.moves.length;
+  const incomplete = stepCount(game) < record.moves.length;
 
   return (
     <GameView

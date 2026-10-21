@@ -280,6 +280,7 @@ function WarpedPanel({
             y={pt.y}
             rotation={rotation}
             listening={false}
+            opacity={pc.frozen ? 0.45 : 1} // 超時出局的棋子：不能動，但可以吃
           >
             {selected && (
               <Circle radius={PIECE_R + 10} stroke={SELECT_COLOR} strokeWidth={5} />

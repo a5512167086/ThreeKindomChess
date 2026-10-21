@@ -33,7 +33,7 @@ const material = (pieces: Piece[], side: Side) =>
 function worstThreat(pieces: Piece[], side: Side, phases: PhaseOf): number {
   let worst = 0;
   for (const attacker of pieces) {
-    if (attacker.owner === side) continue;
+    if (attacker.owner === side || attacker.frozen) continue;
     for (const to of pieceMoves(pieces, attacker, phases(attacker.owner))) {
       const target = pieces.find((p) => samePos(p.pos, to));
       if (!target || target.owner !== side || target.kind === "general") {
