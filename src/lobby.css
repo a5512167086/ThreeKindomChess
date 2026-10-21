@@ -29,6 +29,8 @@
 .fold {
   flex: 1 1 0;
   min-width: 0;
+  box-sizing: border-box;
+  height: 100%; /* 寫明高度，裡面直書的 max-height: 100% 才算得出來 */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -41,6 +43,7 @@
 }
 
 .intro p {
+  max-height: 100%; /* 矮的螢幕上一行放不下就換到下一行（往左），不要被切掉 */
   margin: 0;
   writing-mode: vertical-rl;
   font-size: 17px;
@@ -276,6 +279,62 @@
   }
   .fold {
     flex: 0 0 120px;
+  }
+}
+
+/* 直拿的手機：右邊那欄再縮窄，內頁排成三排三欄，每件事都看得到不用捲。
+   還是由右往左讀，一排讀完換下一排 */
+@media (max-width: 600px) and (orientation: portrait) {
+  .memorial {
+    --panel: 76px;
+    --slip-top: 24px;
+    --open-top: 24px;
+  }
+  .pages {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+  .fold {
+    flex: 0 0 calc(100% / 3);
+    box-sizing: border-box;
+    height: calc(100% / 3);
+    padding: 20px 4px 12px;
+    border-bottom: 1px solid var(--fold);
+    overflow: hidden;
+  }
+  .intro p {
+    font-size: 15px;
+    line-height: 2;
+  }
+  .action {
+    max-height: 100%;
+    gap: 10px;
+  }
+  .action-label {
+    font-size: clamp(22px, 3.6vh, 30px);
+  }
+  .action-desc {
+    font-size: 14px;
+  }
+  .account {
+    gap: 14px;
+  }
+  .join {
+    gap: 0;
+  }
+  .code-input {
+    inline-size: min(200px, 18vh);
+  }
+  .notice {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+  }
+}
+/* 小手機格子太小放不下開頭那段介紹，封面已經寫了「三人象棋」，就省掉 */
+@media (max-width: 600px) and (orientation: portrait) and (max-height: 640px) {
+  .intro {
+    display: none;
   }
 }
 

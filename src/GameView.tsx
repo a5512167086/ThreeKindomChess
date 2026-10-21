@@ -2,7 +2,7 @@
 // 本機對電腦（LocalGame）、連線對戰（OnlineGame）與看棋譜（Records）共用，
 // 差別只在誰能操作、走棋與聊天要送去哪裡。設計稿在 Figma「三垣 UI」的「對弈」。
 
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Pos, Side } from "./rules";
 import { samePos } from "./rules";
 import {
@@ -26,6 +26,7 @@ import { ChatBox } from "./ChatBox";
 import { KIND_LABELS, chineseNumber, moveNotation } from "./notation";
 import { type Clock, formatTime, timeLeft } from "./clock";
 import { Board } from "./Board";
+import { type Reserve, boardScale } from "./boardGeometry";
 import { PANEL_NAMES, SIDE_INK, squareName } from "./sides";
 import { useSettings } from "./settings";
 import "./game.css";
@@ -103,6 +104,50 @@ function useNow(active: boolean): number {
   return now;
 }
 
+// 版面有兩種：狀態和棋譜放棋盤左右（寬螢幕），或放上面、密談在下面（直的或窄的螢幕）。
+// 先用大概的尺寸比一比哪一種棋盤比較大，決定之後再量真正的位置
+const SIDES_GUESS: Reserve = { left: 230, right: 170, top: 12, bottom: 12 };
+const STACKED_GUESS: Reserve = { left: 0, right: 0, top: 290, bottom: 64 };
+const prefersStacked = (w: number, h: number) =>
+  boardScale(w, h, STACKED_GUESS) > boardScale(w, h, SIDES_GUESS);
+
+// 棋盤和旁邊東西之間至少留這麼多
+const BOARD_GAP = 8;
+// 疊起來的版面底下留給收起來的密談
+const CHAT_ROOM = 64;
+
+// 量左上狀態和右上棋譜實際佔到哪裡，棋盤避開它們。棋譜區寬度固定，走棋不會讓棋盤跳動
+type PanelEdges = { statusRight: number; statusBottom: number; movesLeft: number; movesBottom: number };
+function usePanelEdges(
+  statusRef: RefObject<HTMLElement | null>,
+  movesRef: RefObject<HTMLElement | null>,
+  layoutKey: string
+): PanelEdges | null {
+  const [edges, setEdges] = useState<PanelEdges | null>(null);
+  useLayoutEffect(() => {
+    const status = statusRef.current;
+    const moves = movesRef.current;
+    if (!status || !moves) return;
+    const measure = () => {
+      const s = status.getBoundingClientRect();
+      const m = moves.getBoundingClientRect();
+      const next = { statusRight: s.right, statusBottom: s.bottom, movesLeft: m.left, movesBottom: m.bottom };
+      setEdges((prev) =>
+        prev &&
+        (Object.keys(next) as (keyof PanelEdges)[]).every((k) => Math.round(prev[k]) === Math.round(next[k]))
+          ? prev
+          : next
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(status);
+    observer.observe(moves);
+    return () => observer.disconnect();
+  }, [statusRef, movesRef, layoutKey]);
+  return edges;
+}
+
 type GameViewProps = {
   game: GameState;
   clock: Clock | null;
@@ -142,6 +187,9 @@ export function GameView({
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+
+  const statusRef = useRef<HTMLElement>(null);
+  const movesRef = useRef<HTMLElement>(null);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const settings = useSettings();
@@ -282,15 +330,29 @@ export function GameView({
     onSend: (text: string) => onSendChat?.(partner, text),
   });
 
-  // 棋盤左右留給狀態和棋譜；手機寬度改成上面留給狀態、下面留給密談
-  const sideRoom = size.w >= 900 ? Math.min(270, Math.round((size.w - 760) / 2)) : 0;
-  const reserve =
-    size.w < 760
-      ? { left: 0, right: 0, top: Math.round(Math.min(320, size.h * 0.4)), bottom: 64 }
-      : { left: sideRoom, right: sideRoom, top: 12, bottom: 12 };
+  // 棋盤避開狀態和棋譜：寬螢幕在左右兩邊，直的螢幕在上面（下面留給密談）
+  const stacked = prefersStacked(size.w, size.h);
+  const edges = usePanelEdges(statusRef, movesRef, `${stacked} ${size.w} ${size.h}`);
+  const reserve: Reserve = !edges
+    ? stacked
+      ? STACKED_GUESS
+      : SIDES_GUESS
+    : stacked
+      ? {
+          left: 0,
+          right: 0,
+          top: Math.max(edges.statusBottom, edges.movesBottom) + BOARD_GAP,
+          bottom: onSendChat ? CHAT_ROOM : 12,
+        }
+      : {
+          left: edges.statusRight + BOARD_GAP,
+          right: size.w - edges.movesLeft + BOARD_GAP,
+          top: 12,
+          bottom: 12,
+        };
 
   return (
-    <div className="game">
+    <div className={`game${stacked ? " is-stacked" : ""}`}>
       <div className="game-board">
         <Board
           width={size.w}
@@ -307,7 +369,7 @@ export function GameView({
       </div>
 
       {/* 左上：選單、輪到誰、將軍、天象、時間 */}
-      <aside className="game-status">
+      <aside className="game-status" ref={statusRef}>
         <div className="status-head">
           {controls && (
             <div className="game-menu" ref={menuRef}>
@@ -381,12 +443,13 @@ export function GameView({
       </aside>
 
       {/* 右上：直書棋譜。由右往左，最新的一步在最左邊 */}
-      <aside className="game-moves" aria-label="棋譜">
+      <aside className="game-moves" aria-label="棋譜" ref={movesRef}>
         <header className="moves-head">
           <h2>棋譜</h2>
+          {/* 窄的時候「共幾步」換到第二行（固定兩行，步數變長也不會讓高度跳） */}
           <span className="note">
-            {shownIndex === 0 ? "開局" : `第${chineseNumber(shownIndex)}步`}{"　"}共
-            {total === 0 ? "〇" : chineseNumber(total)}步
+            <span>{shownIndex === 0 ? "開局" : `第${chineseNumber(shownIndex)}步`}</span>
+            <span className="moves-total">共{total === 0 ? "〇" : chineseNumber(total)}步</span>
           </span>
         </header>
         <ol className="move-strip">
@@ -422,7 +485,9 @@ export function GameView({
             <NavIcon d="M3 3L14 10L3 17ZM17 3V17" />
           </button>
         </nav>
-        {reviewing && <p className="note">回放中，按最左邊的符號回到目前局面</p>}
+        <p className="note review-note" hidden={!reviewing}>
+          回放中，按最左邊的符號回到目前局面
+        </p>
       </aside>
 
       {/* 密談：左下、右下分別是畫面上左右兩邊的對手 */}

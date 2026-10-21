@@ -540,4 +540,32 @@
   .stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  /* 規則：四周留白縮小，一欄多放幾個字 */
+  .rules {
+    padding: 64px 20px 24px;
+    font-size: 15px;
+  }
+  .rules-title {
+    margin-left: 24px;
+    padding-left: 20px;
+    font-size: 28px;
+  }
+  .rules-section {
+    margin-left: 20px;
+    padding-left: 20px;
+  }
+  .rules-section h2 {
+    font-size: 19px;
+  }
+}
+
+/* 矮的螢幕（橫拿的手機）：規則上面的留白縮小 */
+@media (max-height: 480px) {
+  .rules {
+    padding-top: 60px;
+    padding-bottom: 16px;
+  }
+  .rules-title {
+    font-size: 26px;
+  }
 }

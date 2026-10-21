@@ -15,19 +15,18 @@ import {
 import type { Piece, Pos, Side } from "./rules";
 import { KIND_LABELS } from "./notation";
 import { SIDE_INK } from "./sides";
+import {
+  GRID_ROWS,
+  HORIZONTALS,
+  PANEL_TRANSFORMS,
+  type Reserve,
+  VERTICALS,
+  fitView,
+  toBoard,
+} from "./boardGeometry";
 
-const VERTICALS = 9;
-const HORIZONTALS = 5;
-const PANEL_WIDTH = 1200;
-const PANEL_HEIGHT = 400;
 const LINE_COLOR = "rgba(42, 42, 42, 0.6)"; // 墨線
 const LINE_WIDTH = 2.5;
-const TOP_FOLD = 250;
-const SHRINK_PER_ROW = 80;
-
-// 中央三角形（三個 A5 連線）的邊長；三片面板繞三角形中心各差 120°
-const TRIANGLE_SIDE = 300;
-const HUB_Y = -TOP_FOLD - TRIANGLE_SIDE / Math.sqrt(3);
 
 const SELECT_COLOR = "#c23b22"; // 選中：朱砂
 const TARGET_COLOR = "#3e8a5f"; // 可以走：石綠
@@ -39,72 +38,6 @@ const PIECE_R = 44;
 const PIECE_FILL = "#f4eedf"; // 象牙
 const PIECE_FONT = '"LXGW WenKai TC", "Kaiti TC", "BiauKai", "KaiTi", serif';
 const PIECE_CHARS = Object.values(KIND_LABELS).join("");
-
-type PanelTransform = { x: number; y: number; rotation: number };
-
-// 繞 (0, HUB_Y) 旋轉 deg 度：換算成 Konva 的「先旋轉再平移」
-const aroundHub = (deg: number): PanelTransform => {
-  const rad = (deg * Math.PI) / 180;
-  return {
-    x: HUB_Y * Math.sin(rad),
-    y: HUB_Y * (1 - Math.cos(rad)),
-    rotation: deg,
-  };
-};
-
-// 每片面板在棋盤座標中的位移與旋轉（面板 Group 與跨面板連線共用）
-const PANEL_TRANSFORMS: Record<Side, PanelTransform> = {
-  Center: aroundHub(0),
-  Left: aroundHub(120),
-  Right: aroundHub(-120),
-};
-
-// 局部座標 -> 外層座標（與 Konva 先旋轉再平移的順序一致）
-const toBoard = (
-  t: PanelTransform,
-  [x, y]: [number, number]
-): [number, number] => {
-  const rad = (t.rotation * Math.PI) / 180;
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  return [t.x + x * cos - y * sin, t.y + x * sin + y * cos];
-};
-
-// 計算面板所有交叉點的局部座標：[row][col] -> [x, y]
-function buildGridRows(): [number, number][][] {
-  const startY = 0;
-  const hSpacing = PANEL_HEIGHT / (HORIZONTALS - 1);
-
-  const horizontalPoints: [number, number][][] = [];
-
-  for (let j = 0; j < HORIZONTALS; j++) {
-    const y = startY + j * hSpacing;
-    const shrinkTotal = SHRINK_PER_ROW * j;
-    const rowWidth = PANEL_WIDTH - shrinkTotal;
-    const rowStartX = -rowWidth / 2;
-
-    const fold = TOP_FOLD * (1 - j / (HORIZONTALS - 1));
-
-    const rowPoints: [number, number][] = [];
-    const vSpacingRow = rowWidth / (VERTICALS - 1);
-    const midX = rowStartX + rowWidth / 2;
-
-    for (let i = 0; i < VERTICALS; i++) {
-      const x = rowStartX + i * vSpacingRow;
-      const distToMid = Math.abs(x - midX);
-      const maxDist = rowWidth / 2;
-      const factor = 1 - distToMid / maxDist; // 中央 1、邊緣 0
-      const yPoint = y - fold * factor;
-      rowPoints.push([x, yPoint]);
-    }
-
-    horizontalPoints.push(rowPoints);
-  }
-
-  return horizontalPoints;
-}
-
-const GRID_ROWS = buildGridRows();
 
 // 一片面板的外框（A 排 → 右緣 → E 排反向 → 左緣），用來畫地盤底色
 const PANEL_OUTLINE: number[] = [
@@ -147,38 +80,6 @@ const SEAM_LINKS: [[Side, number, number], [Side, number, number]][] = [
 
 const boardPoint = (p: Pos) =>
   toBoard(PANEL_TRANSFORMS[p.panel], GRID_ROWS[p.row][p.col]);
-
-// 整個棋盤旋轉 rotation 度之後的外框，含棋子半徑的留白
-const FIT_PADDING = 60;
-function boardBounds(rotation: number) {
-  const view = { x: 0, y: 0, rotation };
-  const pts = (Object.values(PANEL_TRANSFORMS) as PanelTransform[]).flatMap(
-    (t) => GRID_ROWS.flat().map((p) => toBoard(view, toBoard(t, p)))
-  );
-  const xs = pts.map(([x]) => x);
-  const ys = pts.map(([, y]) => y);
-  return {
-    minX: Math.min(...xs) - FIT_PADDING,
-    maxX: Math.max(...xs) + FIT_PADDING,
-    minY: Math.min(...ys) - FIT_PADDING,
-    maxY: Math.max(...ys) + FIT_PADDING,
-  };
-}
-
-export type Reserve = { left: number; right: number; top: number; bottom: number };
-
-// 讓整個棋盤剛好塞進 w x h 的視窗扣掉 reserve（留給狀態列、棋譜）後的區域並置中
-function fitView(w: number, h: number, rotation: number, reserve: Reserve) {
-  const { minX, maxX, minY, maxY } = boardBounds(rotation);
-  const innerW = Math.max(1, w - reserve.left - reserve.right);
-  const innerH = Math.max(1, h - reserve.top - reserve.bottom);
-  const scale = Math.min(innerW / (maxX - minX), innerH / (maxY - minY));
-  return {
-    scale,
-    x: reserve.left + innerW / 2 - ((minX + maxX) / 2) * scale,
-    y: reserve.top + innerH / 2 - ((minY + maxY) / 2) * scale,
-  };
-}
 
 // 箭頭終點停在棋子邊緣，不蓋住落點的棋子
 const ARROW_GAP = PIECE_R + 6;

@@ -249,7 +249,7 @@
   top: 36px;
   right: 36px;
   z-index: 1;
-  max-width: 230px;
+  width: 230px; /* 寬度固定：棋盤照這個寬度讓位，走棋時才不會跳動 */
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -269,11 +269,14 @@
   font-size: 22px;
   line-height: 1.2;
 }
+.moves-total {
+  margin-left: 1em;
+}
 .move-strip {
   list-style: none;
   display: flex;
   flex-direction: row-reverse; /* 第一步在最右邊 */
-  max-width: 230px;
+  max-width: 100%;
   overflow-x: auto;
   scrollbar-width: thin;
   border-top: 1px solid var(--fold);
@@ -346,6 +349,27 @@
 .move-nav button:disabled {
   opacity: 0.3;
   cursor: default;
+}
+
+/* 回放提示疊在下面，出現時不要把棋譜區撐高 */
+.review-note {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 100%;
+  text-align: right;
+  pointer-events: none;
+}
+.review-note[hidden] {
+  display: none;
+}
+/* 疊起來的版面裡下面就是棋盤：一直留著它的位置（沒在回放就看不見），才不會蓋到棋子 */
+.is-stacked .review-note {
+  position: static;
+}
+.is-stacked .review-note[hidden] {
+  display: block;
+  visibility: hidden;
 }
 
 /* ---- 左下、右下：密談便箋 ---- */
@@ -476,8 +500,8 @@
   cursor: default;
 }
 
-/* 窄螢幕：字縮小、密談收窄 */
-@media (max-width: 900px) {
+/* 不夠寬（平板、橫拿的手機）：貼近邊緣，棋譜和密談收窄 */
+@media (max-width: 1180px) {
   .game-status,
   .game-moves {
     top: 12px;
@@ -492,10 +516,19 @@
   }
   .game-moves {
     right: 12px;
-    max-width: 150px;
+    width: 150px;
   }
-  .move-strip {
-    max-width: 150px;
+  /* 「共幾步」換到第二行：固定兩行，步數變長也只往左長 */
+  .moves-head .note {
+    text-align: right;
+  }
+  .moves-total {
+    display: block;
+    margin-left: 0;
+  }
+  .move-nav {
+    justify-content: space-between;
+    gap: 4px;
   }
   .chat {
     width: 220px;
@@ -509,55 +542,71 @@
   }
 }
 
-/* 手機：狀態和棋譜在上面、棋盤在中間、兩個密談平分底部 */
+/* 很矮（橫拿的手機），或疊起來但不夠高（小手機）：棋譜每欄不寫步數、欄短一點，
+   橫的下面才放得下密談，直的棋盤才不會被擠小 */
+@media (max-height: 480px) {
+  .move-strip li {
+    min-inline-size: 0;
+    padding: 8px 5px;
+  }
+  .move-strip .num {
+    display: none;
+  }
+}
+@media (max-height: 700px) {
+  .is-stacked .move-strip li {
+    min-inline-size: 0;
+    padding: 8px 5px;
+  }
+  .is-stacked .move-strip .num {
+    display: none;
+  }
+}
+
+/* 直的螢幕（GameView 判斷後加上 is-stacked）：狀態和棋譜在上面、棋盤在中間、兩個密談平分底部 */
+.is-stacked .game-status {
+  width: calc(62vw - 24px);
+  gap: 8px;
+}
+.is-stacked .game-moves {
+  width: min(230px, calc(38vw - 12px));
+}
+.is-stacked .chat {
+  width: calc(50vw - 18px);
+}
+
+/* 手機：字再縮小 */
 @media (max-width: 760px) {
-  .game-status {
-    width: calc(62vw - 24px);
-    gap: 8px;
+  .is-stacked .game-status {
     font-size: 12px;
   }
-  .status-head {
+  .is-stacked .status-head {
     gap: 8px;
   }
-  .turn {
+  .is-stacked .turn {
     --seal-size: 28px;
   }
-  .turn-main {
+  .is-stacked .turn-main {
     font-size: 20px;
   }
-  .sky-line,
-  .alerts {
+  .is-stacked .sky-line,
+  .is-stacked .alerts {
     font-size: 13px;
   }
-  .clocks {
+  .is-stacked .clocks {
     gap: 10px;
     font-size: 13px;
-    --seal-size: 18px;
   }
-  .game-controls {
+  .is-stacked .game-controls {
     font-size: 12px;
   }
-  .game-controls button {
+  .is-stacked .game-controls button {
     font-size: 14px;
   }
-  .game-moves {
-    max-width: calc(38vw - 12px);
-  }
-  /* 手機上步數可以換行（標題在上面一行，不會被擠動） */
-  .moves-head .note {
-    white-space: normal;
-    text-align: right;
-  }
-  .move-strip {
-    max-width: calc(38vw - 12px);
-  }
-  .chat {
-    width: calc(50vw - 18px);
-  }
-  .chat-title {
+  .is-stacked .chat-title {
     font-size: 14px;
   }
-  .chat-toggle {
+  .is-stacked .chat-toggle {
     padding: 10px;
   }
 }
