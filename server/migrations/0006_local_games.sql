@@ -1,0 +1,1 @@
+ALTER TABLE "games" ADD COLUMN "local" boolean DEFAULT false NOT NULL;

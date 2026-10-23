@@ -1,0 +1,353 @@
+/* 大廳：奏摺的封面（磁青）與內頁（宣紙）。設計稿在 Figma「三垣 UI」。 */
+
+.memorial {
+  --panel: clamp(160px, 25vw, 360px); /* 翻開後封面留在右邊的寬度 */
+  --slip-h: min(600px, 64vh); /* 封面上題簽的高度 */
+  --slip-top: min(72px, 8vh);
+  --open-top: min(96px, 10vh);
+  --open-scale: 0.78; /* 翻開後題簽縮小的比例 */
+  --seal: min(134px, 14vh);
+  --ease: cubic-bezier(0.65, 0, 0.35, 1);
+  --duration: 0.9s;
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--paper);
+  font-family: var(--song);
+}
+
+/* ---- 內頁 ---- */
+
+.pages {
+  position: absolute;
+  inset: 0 var(--panel) 0 0;
+  display: flex;
+  flex-direction: row-reverse; /* 由右往左 */
+  color: var(--ink);
+}
+
+.fold {
+  flex: 1 1 0;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 100%; /* 寫明高度，裡面直書的 max-height: 100% 才算得出來 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: clamp(48px, 14vh, 132px);
+  /* 摺痕：一條線＋旁邊淡淡的陰影 */
+  background: linear-gradient(to right, rgb(89 71 38 / 0.12), transparent 16px);
+}
+.fold:not(:last-of-type) {
+  border-left: 1px solid var(--fold);
+}
+
+.intro p {
+  max-height: 100%; /* 矮的螢幕上一行放不下就換到下一行（往左），不要被切掉 */
+  margin: 0;
+  writing-mode: vertical-rl;
+  font-size: 17px;
+  line-height: 2.3;
+  letter-spacing: 0.06em;
+  color: rgb(42 42 42 / 0.85);
+}
+
+/* 直書的按鈕：右邊是標題、左邊是說明。直書時 column 才是左右並排（由右往左） */
+.action {
+  writing-mode: vertical-rl;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start; /* 標題和說明都從上面開始 */
+  text-align: start;
+  gap: 14px;
+  padding: 6px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.action-label {
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: clamp(24px, 3.8vh, 34px);
+  letter-spacing: 0.12em;
+}
+.action-desc {
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  color: var(--grey-ink);
+}
+/* 滑過或用鍵盤選到：字變朱紅，旁邊出現朱紅圈點 */
+.action:hover .action-label,
+.action:focus-visible .action-label {
+  color: var(--vermilion);
+  text-emphasis: open circle var(--vermilion);
+}
+.action:focus-visible,
+.action-small:focus-visible,
+.seal:focus-visible {
+  outline: 2px dashed var(--vermilion);
+  outline-offset: 6px;
+}
+
+.account {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+/* 個人資料底下的小字：我的棋譜、登出，由右往左並排 */
+.account-links {
+  display: flex;
+  flex-direction: row-reverse;
+  gap: 14px;
+}
+.action-small {
+  writing-mode: vertical-rl;
+  padding: 4px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  letter-spacing: 0.2em;
+  color: var(--grey-ink);
+  cursor: pointer;
+}
+.action-small:hover {
+  color: var(--vermilion);
+}
+
+.join {
+  gap: 56px;
+}
+.join-row {
+  writing-mode: vertical-rl;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* 直的房號框：直書時「底線」畫在字的右邊 */
+.code-input {
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  inline-size: 200px;
+  block-size: 2.2em;
+  padding: 4px 0;
+  border: 0;
+  border-right: 1px solid rgb(42 42 42 / 0.7);
+  background: none;
+  font: inherit;
+  font-size: 17px;
+  letter-spacing: 0.2em;
+  color: var(--ink);
+}
+.code-input::placeholder {
+  color: var(--grey-ink);
+  opacity: 1;
+}
+.code-input:focus {
+  outline: none;
+  border-color: var(--vermilion);
+}
+
+.notice {
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  margin: 0;
+  padding: 10px 16px;
+  border-left: 3px solid var(--vermilion);
+  background: rgb(232 224 204 / 0.95);
+  color: var(--vermilion);
+  font-size: 15px;
+}
+
+/* ---- 封面 ---- */
+
+.cover {
+  position: absolute;
+  inset: 0;
+  background: var(--deep);
+  box-shadow: -6px 0 18px rgb(25 20 10 / 0.35);
+  transition: transform var(--duration) var(--ease);
+}
+.is-open .cover {
+  transform: translateX(calc(100% - var(--panel)));
+}
+
+/* 題簽：紙條＋外粗內細的雙框，墨字 */
+.slip {
+  position: absolute;
+  top: var(--slip-top);
+  left: 50%;
+  height: var(--slip-h);
+  aspect-ratio: 178 / 600;
+  transform: translateX(-50%);
+  transform-origin: top center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--paper-white);
+  color: var(--ink);
+  box-shadow: 0 4px 10px rgb(0 0 0 / 0.4);
+  transition:
+    left var(--duration) var(--ease),
+    top var(--duration) var(--ease),
+    transform var(--duration) var(--ease);
+}
+.slip::before,
+.slip::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+.slip::before {
+  inset: calc(var(--slip-h) * 0.017);
+  border: 3px solid var(--ink);
+}
+.slip::after {
+  inset: calc(var(--slip-h) * 0.028);
+  border: 1px solid rgb(42 42 42 / 0.85);
+}
+.slip-title {
+  margin: calc(var(--slip-h) * 0.1) 0 0;
+  writing-mode: vertical-rl;
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: calc(var(--slip-h) * 0.22);
+  line-height: 1;
+}
+.slip-sub {
+  margin: calc(var(--slip-h) * 0.06) 0 0;
+  writing-mode: vertical-rl;
+  font-family: var(--kai);
+  font-size: calc(var(--slip-h) * 0.04);
+  letter-spacing: 0.15em;
+}
+.is-open .slip {
+  top: var(--open-top);
+  left: calc(var(--panel) / 2);
+  transform: translateX(-50%) scale(var(--open-scale));
+}
+
+/* 開始遊戲：四字方印，由右往左讀 */
+.seal {
+  position: absolute;
+  top: calc(var(--slip-top) + var(--slip-h) + 40px);
+  left: 50%;
+  width: var(--seal);
+  height: var(--seal);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid rgb(239 232 216 / 0.5);
+  border-radius: 5px;
+  background: var(--vermilion);
+  color: var(--paper-white);
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: calc(var(--seal) * 0.34);
+  line-height: 1.06;
+  writing-mode: vertical-rl;
+  cursor: pointer;
+  transition:
+    opacity 0.3s ease,
+    visibility 0s linear 0.3s,
+    background 0.15s ease;
+}
+.seal:hover {
+  background: #a83019;
+}
+.is-open .seal {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* 窄螢幕：右邊那欄縮窄，內頁可以左右捲動 */
+@media (max-width: 760px) {
+  .memorial {
+    --panel: 132px;
+    --slip-h: min(600px, 52vh);
+    --open-scale: 0.5;
+  }
+  .pages {
+    overflow-x: auto;
+  }
+  .fold {
+    flex: 0 0 120px;
+  }
+}
+
+/* 直拿的手機：右邊那欄再縮窄，內頁排成三排三欄，每件事都看得到不用捲。
+   還是由右往左讀，一排讀完換下一排 */
+@media (max-width: 600px) and (orientation: portrait) {
+  .memorial {
+    --panel: 76px;
+    --slip-top: 24px;
+    --open-top: 24px;
+  }
+  .pages {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+  .fold {
+    flex: 0 0 calc(100% / 3);
+    box-sizing: border-box;
+    height: calc(100% / 3);
+    padding: 20px 4px 12px;
+    border-bottom: 1px solid var(--fold);
+    overflow: hidden;
+  }
+  .intro p {
+    font-size: 15px;
+    line-height: 2;
+  }
+  .action {
+    max-height: 100%;
+    gap: 10px;
+  }
+  .action-label {
+    font-size: clamp(22px, 3.6vh, 30px);
+  }
+  .action-desc {
+    font-size: 14px;
+  }
+  .account {
+    gap: 14px;
+  }
+  .join {
+    gap: 0;
+  }
+  .code-input {
+    inline-size: min(200px, 18vh);
+  }
+  .notice {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+  }
+}
+/* 小手機格子太小放不下開頭那段介紹，封面已經寫了「三人象棋」，就省掉 */
+@media (max-width: 600px) and (orientation: portrait) and (max-height: 640px) {
+  .intro {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cover,
+  .slip,
+  .seal {
+    transition: none;
+  }
+}
+
+/* 直書裡的阿拉伯數字（積分）一個一個直立排，不要躺著 */
+.upright {
+  text-orientation: upright;
+  letter-spacing: -0.1em;
+}

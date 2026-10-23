@@ -1,326 +1,248 @@
-import { type JSX, useMemo, useState } from "react";
-import { Stage, Layer, Line, Group, Circle, Text } from "react-konva";
+// 進站流程：封面 → 大廳（單機、建房、加入、積分配對、規則、個人資料、我的棋譜、設定、訂閱與客服）→ 對局
 
-const VERTICALS = 9;
-const HORIZONTALS = 5;
-const PANEL_WIDTH = 1200;
-const PANEL_HEIGHT = 400;
-const LINE_COLOR = "#e5e7eb";
-const TOP_FOLD = 250;
-const SHRINK_PER_ROW = 80;
+import { useEffect, useState } from "react";
+import type { MeResponse } from "./protocol";
+import { fetchMe, logout, saveName, savedName, savedRoom } from "./net";
+import { LocalGame } from "./LocalGame";
+import { type OnlineAction, OnlineGame } from "./OnlineGame";
+import { RecordsPage } from "./Records";
+import { ProfilePage } from "./Profile";
+import { SettingsPage } from "./SettingsPage";
+import { Lobby } from "./Lobby";
+import { RulesPage } from "./RulesPage";
+import { PricingPage } from "./PricingPage";
+import { SUPPORT_EMAIL } from "./credits";
 
-const LEFT_ROT = 120.5;
-const RIGHT_ROT = -120.5;
+type Mode =
+  | { kind: "menu" }
+  | { kind: "local" }
+  | { kind: "online"; action: OnlineAction }
+  | { kind: "records" }
+  | { kind: "profile" }
+  | { kind: "rules" }
+  | { kind: "pricing" }
+  // then：取好暱稱後接著要做的事（例如點邀請連結進來，存好暱稱就進房）
+  | { kind: "settings"; notice?: string; then?: OnlineAction };
 
-const SEAM_X = 380;
-const SEAM_Y = 620;
+const NAME_FIRST = "連線對戰前先取個暱稱，別人才知道你是誰";
 
-// 把 0..HORIZONTALS-1 轉 A..E
-const rowLabel = (rowIdx: number) => String.fromCharCode(65 + rowIdx);
-// 把 0..VERTICALS-1 轉 1..9
-const colLabel = (colIdx: number) => (colIdx + 1).toString();
+// 邀請連結帶的房號：?room=ABCDE
+const inviteCode = () =>
+  new URLSearchParams(location.search).get("room")?.toUpperCase() ?? "";
 
-// 棋子樣式（不同面板不同顏色）
-const PANEL_COLORS: Record<
-  WarpedPanelProps["panelTag"],
-  { fill: string; text: string; stroke: string }
-> = {
-  Center: { fill: "#fee2e2", text: "#b91c1c", stroke: "#fca5a5" }, // 紅
-  Left: { fill: "#e5e7eb", text: "#111827", stroke: "#9ca3af" }, // 黑（灰底黑字）
-  Right: { fill: "#dbeafe", text: "#1e3a8a", stroke: "#93c5fd" }, // 藍
+// 一進站要做的事：點邀請連結進來就進那個房間（沒暱稱先取一個）；
+// 不然重新整理前在房間裡的話，直接連回去
+function initialMode(): Mode {
+  if (location.pathname === PRICING_PATH) return { kind: "pricing" };
+  const invite = inviteCode();
+  if (invite) {
+    const join: OnlineAction = { type: "join", code: invite };
+    return savedName() ? { kind: "online", action: join } : { kind: "settings", notice: NAME_FIRST, then: join };
+  }
+  if (savedRoom() && savedName()) return { kind: "online", action: { type: "resume" } };
+  return { kind: "menu" };
+}
+
+// 登入沒成功時伺服器導回來會帶 ?login=原因
+const LOGIN_NOTICES: Record<string, string> = {
+  failed: "登入失敗，請再試一次",
+  cancelled: "已取消登入",
+  unavailable: "伺服器還沒設定好 Google 登入",
+};
+// 付款後伺服器導回來會帶 ?billing=結果
+const BILLING_NOTICES: Record<string, string> = {
+  paid: "付款成功，訂閱已生效",
+  pending: "付款處理中，完成後訂閱會自動生效",
+  failed: `付款沒有完成。如果已經扣款但訂閱沒生效，請來信 ${SUPPORT_EMAIL} 告訴我們`,
+  cancelled: "已取消付款",
+};
+const NOTICE_PARAMS = { login: LOGIN_NOTICES, billing: BILLING_NOTICES };
+const urlNotice = () => {
+  const params = new URLSearchParams(location.search);
+  for (const [key, notices] of Object.entries(NOTICE_PARAMS)) {
+    const notice = notices[params.get(key) ?? ""];
+    if (notice) return notice;
+  }
+  return null;
 };
 
-type WarpedPanelProps = {
-  panelTag: "Left" | "Center" | "Right";
-  onPick?: (info: {
-    panel: string;
-    row: number;
-    col: number;
-    x: number;
-    y: number;
-  }) => void;
+// 訂閱與客服頁有自己的網址，給金流審核或客服直接貼連結
+const PRICING_PATH = "/pricing";
+
+// 封面翻開過就記在這個分頁裡，登入回來或重新整理不用再翻一次
+const COVER_KEY = "tkc.coverOpened";
+const coverOpened = () => {
+  try {
+    return sessionStorage.getItem(COVER_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+const rememberCoverOpened = () => {
+  try {
+    sessionStorage.setItem(COVER_KEY, "1");
+  } catch {
+    // 存不了就算了，只是下次要再翻一次封面
+  }
 };
 
-// 單片面板
-function WarpedPanel({ panelTag, onPick }: WarpedPanelProps) {
-  const { verticals, horizontals, crosses, gridPoints } = useMemo(() => {
-    const vLines: JSX.Element[] = [];
-    const hLines: JSX.Element[] = [];
-    const crossLines: JSX.Element[] = [];
+export default function App() {
+  const [opened, setOpened] = useState(coverOpened);
+  const [name, setName] = useState(savedName);
+  const [code, setCode] = useState(inviteCode);
+  const [notice, setNotice] = useState<string | null>(urlNotice);
+  // undefined：還在問伺服器；null：伺服器沒回應
+  const [me, setMe] = useState<MeResponse | null | undefined>(undefined);
+  const [onlineRound, setOnlineRound] = useState(0); // 再配一局時換一個新的連線畫面
 
-    const startY = 0;
-    const hSpacing = PANEL_HEIGHT / (HORIZONTALS - 1);
+  const [mode, setMode] = useState<Mode>(initialMode);
 
-    const horizontalPoints: [number, number][][] = [];
-
-    for (let j = 0; j < HORIZONTALS; j++) {
-      const y = startY + j * hSpacing;
-      const shrinkTotal = SHRINK_PER_ROW * j;
-      const rowWidth = PANEL_WIDTH - shrinkTotal;
-      const rowStartX = -rowWidth / 2;
-
-      const fold = TOP_FOLD * (1 - j / (HORIZONTALS - 1));
-
-      const rowPoints: [number, number][] = [];
-      const vSpacingRow = rowWidth / (VERTICALS - 1);
-      const midX = rowStartX + rowWidth / 2;
-
-      for (let i = 0; i < VERTICALS; i++) {
-        const x = rowStartX + i * vSpacingRow;
-        const distToMid = Math.abs(x - midX);
-        const maxDist = rowWidth / 2;
-        const factor = 1 - distToMid / maxDist; // 中央 1、邊緣 0
-        const yPoint = y - fold * factor;
-        rowPoints.push([x, yPoint]);
-      }
-
-      horizontalPoints.push(rowPoints);
-      hLines.push(
-        <Line
-          key={`h-${j}`}
-          points={rowPoints.flat()}
-          stroke={LINE_COLOR}
-          strokeWidth={2}
-          lineCap="round"
-          lineJoin="round"
-          listening={false}
-        />
-      );
+  useEffect(() => {
+    // ?login= / ?billing= / ?room= 讀過就從網址拿掉，重新整理才不會又跳提示、又進一次房
+    const url = new URL(location.href);
+    const keys = [...Object.keys(NOTICE_PARAMS), "room"].filter((key) => url.searchParams.has(key));
+    if (keys.length) {
+      for (const key of keys) url.searchParams.delete(key);
+      history.replaceState(null, "", url);
     }
-
-    for (let i = 0; i < VERTICALS; i++) {
-      const vertPoints: number[] = [];
-      for (let j = 0; j < HORIZONTALS; j++) {
-        vertPoints.push(horizontalPoints[j][i][0], horizontalPoints[j][i][1]);
-      }
-      vLines.push(
-        <Line
-          key={`v-${i}`}
-          points={vertPoints}
-          stroke={LINE_COLOR}
-          strokeWidth={2}
-          listening={false}
-        />
-      );
-    }
-
-    // 大型 X（保留）
-    const topRowIdx = HORIZONTALS - 3;
-    const midRowIdx = HORIZONTALS - 2;
-    const bottomRowIdx = HORIZONTALS - 1;
-    const leftColIdx = 3;
-    const rightColIdx = 5;
-    const midColIdx = Math.floor((VERTICALS - 1) / 2);
-
-    const [tlx, tly] = horizontalPoints[topRowIdx][leftColIdx];
-    const [trx, try_] = horizontalPoints[topRowIdx][rightColIdx];
-    const [blx, bly] = horizontalPoints[bottomRowIdx][leftColIdx];
-    const [brx, bry] = horizontalPoints[bottomRowIdx][rightColIdx];
-    const [mx, my] = horizontalPoints[midRowIdx][midColIdx];
-
-    crossLines.push(
-      <Line
-        key="bigx-tl-mid"
-        points={[tlx, tly, mx, my]}
-        stroke={LINE_COLOR}
-        strokeWidth={2}
-        listening={false}
-      />
-    );
-    crossLines.push(
-      <Line
-        key="bigx-mid-br"
-        points={[mx, my, brx, bry]}
-        stroke={LINE_COLOR}
-        strokeWidth={2}
-        listening={false}
-      />
-    );
-    crossLines.push(
-      <Line
-        key="bigx-tr-mid"
-        points={[trx, try_, mx, my]}
-        stroke={LINE_COLOR}
-        strokeWidth={2}
-        listening={false}
-      />
-    );
-    crossLines.push(
-      <Line
-        key="bigx-mid-bl"
-        points={[mx, my, blx, bly]}
-        stroke={LINE_COLOR}
-        strokeWidth={2}
-        listening={false}
-      />
-    );
-
-    // 蒐集所有交叉點 (row, col) -> (x,y)
-    const gridPoints: { row: number; col: number; x: number; y: number }[] = [];
-    for (let row = 0; row < HORIZONTALS; row++) {
-      for (let col = 0; col < VERTICALS; col++) {
-        const [x, y] = horizontalPoints[row][col];
-        gridPoints.push({ row, col, x, y });
-      }
-    }
-
-    return {
-      verticals: vLines,
-      horizontals: hLines,
-      crosses: crossLines,
-      gridPoints,
+    let alive = true;
+    fetchMe().then((res) => {
+      if (!alive) return;
+      setMe(res);
+      const account = res?.account;
+      if (!account) return;
+      setName(account.name);
+      // 點邀請連結進來時還沒有暱稱，但已經登入：用帳號的名字直接進房
+      setMode((m) => {
+        if (m.kind !== "settings" || !m.then) return m;
+        saveName(account.name);
+        return { kind: "online", action: m.then };
+      });
+    });
+    return () => {
+      alive = false;
     };
   }, []);
 
-  // ---- 在這裡畫棋子（上半邊標準象棋排法）----
-  // row 0: 車馬相士將士相馬車
-  const backRank = [
-    { col: 0, label: "車" },
-    { col: 1, label: "馬" },
-    { col: 2, label: "相" },
-    { col: 3, label: "士" },
-    { col: 4, label: "將" },
-    { col: 5, label: "士" },
-    { col: 6, label: "相" },
-    { col: 7, label: "馬" },
-    { col: 8, label: "車" },
-  ].map((p) => ({ row: 4, ...p }));
+  const backToMenu = (message?: string) => {
+    if (location.pathname === PRICING_PATH) history.replaceState(null, "", "/" + location.search);
+    setNotice(message ?? null);
+    setMode({ kind: "menu" });
+    // 剛下完積分對局的話積分變了，重新問一次
+    fetchMe().then((res) => res && setMe(res));
+  };
 
-  // row 2: 炮 at 1,7
-  const cannons = [
-    { row: 2, col: 1, label: "炮" },
-    { row: 2, col: 7, label: "炮" },
-  ];
-
-  // row 3: 兵 at 0,2,4,6,8
-  const pawns = [0, 2, 4, 6, 8].map((c) => ({ row: 1, col: c, label: "兵" }));
-
-  const pieces = [...backRank, ...cannons, ...pawns];
-
-  const color = PANEL_COLORS[panelTag];
-
-  // 建立 grid point 查找
-  const pointKey = (r: number, c: number) => `${r},${c}`;
-  const pointMap = useMemo(() => {
-    const m = new Map<string, { x: number; y: number }>();
-    gridPoints.forEach((p) =>
-      m.set(pointKey(p.row, p.col), { x: p.x, y: p.y })
+  if (mode.kind === "local") return <LocalGame loggedIn={!!me?.account} onExit={() => backToMenu()} />;
+  if (mode.kind === "online") {
+    return (
+      <OnlineGame
+        name={name.trim()}
+        action={mode.action}
+        key={onlineRound}
+        rating={me?.account?.rating ?? null}
+        onExit={backToMenu}
+        onRematch={() => {
+          setOnlineRound((r) => r + 1);
+          setMode({ kind: "online", action: { type: "match" } });
+          // 積分變了，配對畫面上的段位要更新
+          fetchMe().then((res) => res && setMe(res));
+        }}
+      />
     );
-    return m;
-  }, [gridPoints]);
-
-  return (
-    <Group>
-      {horizontals}
-      {verticals}
-      {crosses}
-
-      {/* 棋子（不攔截滑鼠事件） */}
-      {pieces.map((pc, idx) => {
-        const pt = pointMap.get(pointKey(pc.row, pc.col));
-        if (!pt) return null;
-        return (
-          <Group key={`piece-${idx}`} x={pt.x} y={pt.y} listening={false}>
-            <Circle
-              radius={35}
-              fill={color.fill}
-              stroke={color.stroke}
-              strokeWidth={2}
-            />
-            <Text
-              text={pc.label}
-              fontSize={35}
-              fontStyle="bold"
-              fill={color.text}
-              align="center"
-              verticalAlign="middle"
-              offsetX={18} // 粗估中文字寬度（Konva Text無置中基線，這樣看起來居中）
-              offsetY={14}
-            />
-          </Group>
-        );
-      })}
-
-      {/* 點擊熱區：透明但可點（置於最上層） */}
-      {gridPoints.map((p) => (
-        <Circle
-          key={`pt-${p.row}-${p.col}`}
-          x={p.x}
-          y={p.y}
-          radius={18} // 熱區可調
-          fill="white"
-          opacity={0.001} // 幾乎看不見，但仍可點擊
-          onClick={() =>
-            onPick?.({
-              panel: panelTag,
-              row: p.row,
-              col: p.col,
-              x: p.x,
-              y: p.y,
-            })
-          }
-          onTap={() =>
-            onPick?.({
-              panel: panelTag,
-              row: p.row,
-              col: p.col,
-              x: p.x,
-              y: p.y,
-            })
-          }
-        />
-      ))}
-    </Group>
-  );
-}
-
-export default function App() {
-  const stageW = typeof window !== "undefined" ? window.innerWidth : 1280;
-  const stageH = typeof window !== "undefined" ? window.innerHeight : 900;
-
-  const cx = stageW / 2;
-  const cy = stageH / 2 + 120;
-
-  const [lastPick, setLastPick] = useState<string>("尚未點擊");
-
-  const handlePick = (info: {
-    panel: string;
-    row: number;
-    col: number;
-    x: number;
-    y: number;
-  }) => {
-    const rLabel = rowLabel(info.row); // A..E (A=0)
-    const cLabel = colLabel(info.col); // 1..9
-    setLastPick(
-      `${info.panel} 面板：${rLabel}${cLabel}  (x=${info.x.toFixed(
-        1
-      )}, y=${info.y.toFixed(1)})`
+  }
+  if (mode.kind === "records" && me?.account) {
+    return (
+      <RecordsPage onSubscribe={() => setMode({ kind: "profile" })} onExit={() => backToMenu()} />
     );
-    console.log({ ...info, label: `${rLabel}${cLabel}` });
+  }
+
+  if (mode.kind === "profile" && me?.account) {
+    const account = me.account;
+    return (
+      <ProfilePage
+        subscription={account.subscription}
+        payments={me.payments}
+        fakeBilling={me.fakeBilling}
+        onSubscriptionChange={(subscription) =>
+          setMe({ ...me, account: { ...account, subscription } })
+        }
+        onExit={() => backToMenu()}
+      />
+    );
+  }
+  if (mode.kind === "rules") return <RulesPage onExit={() => backToMenu()} />;
+  if (mode.kind === "pricing") return <PricingPage onExit={() => backToMenu()} />;
+  if (mode.kind === "settings") {
+    return (
+      <SettingsPage
+        name={name}
+        loggedIn={!!me?.account}
+        notice={mode.notice}
+        onNameSaved={(saved) => {
+          setName(saved);
+          if (me?.account) setMe({ ...me, account: { ...me.account, name: saved } });
+          // 是為了連線才來取暱稱的：存好就接著連線
+          if (mode.then) {
+            setNotice(null);
+            setMode({ kind: "online", action: mode.then });
+          }
+        }}
+        onExit={() => backToMenu()}
+      />
+    );
+  }
+
+  const trimmed = name.trim();
+  const goOnline = (action: OnlineAction) => {
+    // 沒暱稱就先帶去設定取一個，存好再連線
+    if (!trimmed) {
+      setMode({ kind: "settings", notice: NAME_FIRST, then: action });
+      return;
+    }
+    saveName(trimmed);
+    setNotice(null);
+    setMode({ kind: "online", action });
   };
 
   return (
-    <Stage width={stageW} height={stageH} style={{ background: "#0f172a" }}>
-      <Layer>
-        {/* 顯示最後一次點擊結果 */}
-        <Text x={16} y={16} text={lastPick} fill="#e5e7eb" fontSize={18} />
-
-        {/* 中間面板（紅） */}
-        <Group x={cx} y={cy}>
-          <WarpedPanel panelTag="Center" onPick={handlePick} />
-        </Group>
-
-        {/* 左面板（黑） */}
-        <Group x={cx - SEAM_X} y={cy - SEAM_Y} rotation={LEFT_ROT}>
-          <WarpedPanel panelTag="Left" onPick={handlePick} />
-        </Group>
-
-        {/* 右面板（藍） */}
-        <Group x={cx + SEAM_X} y={cy - SEAM_Y} rotation={RIGHT_ROT}>
-          <WarpedPanel panelTag="Right" onPick={handlePick} />
-        </Group>
-      </Layer>
-    </Stage>
+    <Lobby
+      me={me}
+      name={name}
+      code={code}
+      onCodeChange={setCode}
+      notice={notice}
+      opened={opened}
+      onOpen={() => {
+        rememberCoverOpened();
+        setOpened(true);
+      }}
+      onCreate={() => goOnline({ type: "create" })}
+      onMatch={() => {
+        if (me?.account) goOnline({ type: "match" });
+        else setNotice("積分配對要先登入，輸贏才有地方記分");
+      }}
+      onJoin={(focusCode) => {
+        if (!code.trim()) {
+          setNotice("先輸入朋友給的房號");
+          focusCode();
+          return;
+        }
+        goOnline({ type: "join", code: code.trim() });
+      }}
+      onLocal={() => {
+        setNotice(null);
+        setMode({ kind: "local" });
+      }}
+      onRules={() => setMode({ kind: "rules" })}
+      onPricing={() => setMode({ kind: "pricing" })}
+      onRecords={() => setMode({ kind: "records" })}
+      onProfile={() => setMode({ kind: "profile" })}
+      onSettings={() => setMode({ kind: "settings" })}
+      onLogout={async () => {
+        if (!me) return;
+        if (await logout()) setMe({ ...me, account: null });
+        else setNotice("登出失敗，請再試一次");
+      }}
+    />
   );
 }

@@ -1,0 +1,607 @@
+/* 個人資料、設定這類的內頁：宣紙底，右邊一欄直書標題（跟大廳一樣由右往左讀），內容橫排 */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--song);
+}
+.sheet-inner {
+  display: flex;
+  flex-direction: row-reverse;
+  gap: 48px;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: clamp(48px, 12vh, 112px) 32px 64px;
+}
+.sheet-title {
+  flex: none;
+  margin: 0;
+  padding-left: 28px;
+  border-left: 1px solid var(--fold);
+  writing-mode: vertical-rl;
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: clamp(30px, 4.4vh, 40px);
+  letter-spacing: 0.16em;
+}
+.sheet-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+.sheet-back {
+  position: fixed;
+  top: 28px;
+  left: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 17px;
+  cursor: pointer;
+}
+.sheet-back:hover {
+  color: var(--vermilion);
+}
+.sheet button:focus-visible,
+.sheet input:focus-visible,
+.sheet a:focus-visible {
+  outline: 2px dashed var(--vermilion);
+  outline-offset: 3px;
+}
+.sheet p {
+  margin: 0;
+}
+.sheet .note {
+  font-size: 13px;
+  color: var(--grey-ink);
+}
+.sheet-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 24px;
+  border-top: 1px solid var(--fold);
+}
+.sheet-section:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.sheet-section h2 {
+  margin: 0;
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: 0.06em;
+}
+.sheet-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--vermilion);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.sheet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 1.4em;
+}
+
+/* ---- 訂閱與客服 ---- */
+
+/* 窄螢幕放不下就表格自己左右捲，整頁不要跟著橫捲 */
+.price-table-wrap {
+  overflow-x: auto;
+}
+.price-table {
+  border-collapse: collapse;
+  white-space: nowrap;
+}
+.price-table th,
+.price-table td {
+  padding: 8px 16px 8px 0;
+  border-bottom: 1px solid var(--fold);
+  text-align: left;
+}
+.price-table thead th {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--grey-ink);
+}
+.price-table tbody th {
+  font-family: var(--kai);
+  font-weight: 700;
+}
+.price-table td {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- 個人資料 ---- */
+
+.profile-who {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.profile-who img {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.profile-name {
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 24px;
+}
+
+/* 段位：朱紅方印裡直書段位名，旁邊是大大的Ⅰ/Ⅱ/Ⅲ */
+.rank {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.rank-seal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 4px;
+  background: var(--vermilion);
+  color: var(--ivory);
+  writing-mode: vertical-rl;
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 26px;
+  line-height: 1.05;
+  letter-spacing: 0.04em;
+}
+.rank-division {
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 44px;
+  line-height: 1;
+}
+.rank-points {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.rank-points b {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.progress {
+  height: 6px;
+  border-radius: 3px;
+  background: rgb(110 102 86 / 0.2);
+  overflow: hidden;
+}
+.progress > span {
+  display: block;
+  height: 100%;
+  background: var(--vermilion);
+}
+
+/* 戰績：一列一個數字 */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+.stats div {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+}
+.stats dt {
+  font-size: 13px;
+  color: var(--grey-ink);
+}
+.stats dd {
+  margin: 0;
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 26px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 訂閱：一個金流一排，左邊金流名稱、右邊方案按鈕 */
+.plan-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.plan-provider {
+  width: 150px;
+}
+
+/* ---- 設定 ---- */
+
+.field {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+.field input[type="text"] {
+  width: min(240px, 100%);
+  padding: 6px 0;
+  border: 0;
+  border-bottom: 1px solid rgb(42 42 42 / 0.7);
+  background: none;
+  font: inherit;
+  font-size: 17px;
+  color: var(--ink);
+}
+.field input[type="text"]:focus {
+  outline: none;
+  border-color: var(--vermilion);
+}
+.sheet-button {
+  padding: 6px 14px;
+  border: 1px solid var(--ink);
+  border-radius: 3px;
+  background: none;
+  color: var(--ink);
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+}
+.sheet-button:hover:not(:disabled) {
+  border-color: var(--vermilion);
+  color: var(--vermilion);
+}
+.sheet-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.sheet-button.primary {
+  padding: 10px 28px;
+  border-color: var(--vermilion);
+  background: var(--vermilion);
+  color: var(--ivory);
+  font-size: 16px;
+}
+.sheet-button.primary:hover:not(:disabled) {
+  border-color: #a83019;
+  background: #a83019;
+  color: var(--ivory);
+}
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+.choice input {
+  margin: 4px 0 0;
+  accent-color: var(--vermilion);
+}
+.choice span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ---- 等待室 ---- */
+
+.room-code {
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: clamp(44px, 12vw, 64px);
+  line-height: 1.2;
+  letter-spacing: 0.24em;
+}
+.field.invite input[type="text"] {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  font-size: 15px;
+  color: var(--grey-ink);
+  border-bottom-color: var(--fold);
+}
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.seats {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.seat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 4px;
+  border-bottom: 1px solid var(--fold);
+}
+.seat.empty {
+  border-bottom-style: dashed;
+}
+.seat-dot {
+  flex: none;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border: 1.2px solid var(--grey-ink);
+  border-radius: 50%;
+}
+.seat-dot.online {
+  border-color: var(--green);
+  background: var(--green);
+}
+.seat.empty .seat-dot {
+  border-style: dashed;
+}
+.seat-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.seat.offline .seat-name,
+.seat.empty .seat-name {
+  color: var(--grey-ink);
+}
+.seat-tag {
+  flex: none;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--vermilion);
+}
+.seat-note {
+  flex: none;
+  margin-left: auto;
+}
+.start-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+/* ---- 規則：整頁直書，由右往左讀，太長就往左捲 ---- */
+
+.sheet.rules-page {
+  writing-mode: vertical-rl;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.rules-page .sheet-back {
+  writing-mode: horizontal-tb;
+}
+.rules {
+  box-sizing: border-box;
+  height: 100%;
+  padding: clamp(80px, 12vh, 112px) 64px 56px;
+  font-size: 16px;
+  line-height: 2;
+  letter-spacing: 0.08em;
+}
+.rules-title {
+  margin: 0 0 0 40px;
+  padding-left: 28px;
+  border-left: 1px solid var(--fold);
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: clamp(30px, 4.4vh, 40px);
+  letter-spacing: 0.16em;
+}
+.rules-section {
+  margin-left: 36px;
+  padding-left: 36px;
+  border-left: 1px solid var(--fold);
+}
+.rules-section:last-child {
+  border-left: 0;
+}
+.rules-section h2 {
+  margin: 0 0 0 12px;
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: 0.12em;
+}
+.rules-section ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* 一條太長換行時，下一行從圓點底下開始（懸掛縮排） */
+.rules-section li {
+  padding-inline-start: 1em;
+  text-indent: -1em;
+}
+.rules-section li::before {
+  content: "・";
+  color: var(--grey-ink);
+}
+
+/* ---- 我的棋譜 ---- */
+
+.quota {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.quota-count {
+  color: var(--grey-ink);
+}
+.quota-count b {
+  margin-right: 4px;
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 44px;
+  line-height: 1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+/* 格子：實心是還能看的，空心是今天用掉的 */
+.quota-pips {
+  display: flex;
+  gap: 6px;
+}
+.quota-pips span {
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--vermilion);
+}
+.quota-pips span.used {
+  border: 1.2px solid var(--fold);
+  background: none;
+}
+.records {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.record {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--fold);
+}
+/* 結果印：勝＝朱砂實心，負＝灰墨框，和＝摺痕框 */
+.record-seal {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 44px;
+  height: 44px;
+  border-radius: 4px;
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 24px;
+}
+.record-seal.win {
+  background: var(--vermilion);
+  color: var(--ivory);
+}
+.record-seal.loss {
+  border: 1.2px solid var(--grey-ink);
+  color: var(--grey-ink);
+}
+.record-seal.draw {
+  border: 1.2px solid var(--fold);
+  color: var(--grey-ink);
+}
+.record-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.record-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.record-side {
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 18px;
+}
+.record-rating {
+  font-size: 14px;
+  font-weight: 500;
+}
+.record-opponents {
+  overflow-wrap: anywhere;
+}
+.record .sheet-button {
+  flex: none;
+}
+
+@media (max-width: 640px) {
+  /* 窄螢幕：復盤按鈕換到下一行，內容才有寬度 */
+  .record {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+  .record-info {
+    flex-basis: calc(100% - 60px);
+  }
+  .record .sheet-button {
+    margin-left: 60px; /* 對齊內容，不要排到結果印底下 */
+  }
+}
+
+@media (max-width: 640px) {
+  .sheet-inner {
+    flex-direction: column;
+    gap: 24px;
+    padding: 72px 16px 48px;
+  }
+  .sheet-title {
+    writing-mode: horizontal-tb;
+    padding: 0 0 12px;
+    border-left: 0;
+    border-bottom: 1px solid var(--fold);
+    font-size: 28px;
+  }
+  .sheet-back {
+    top: 16px;
+    left: 12px;
+  }
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  /* 規則：四周留白縮小，一欄多放幾個字 */
+  .rules {
+    padding: 64px 20px 24px;
+    font-size: 15px;
+  }
+  .rules-title {
+    margin-left: 24px;
+    padding-left: 20px;
+    font-size: 28px;
+  }
+  .rules-section {
+    margin-left: 20px;
+    padding-left: 20px;
+  }
+  .rules-section h2 {
+    font-size: 19px;
+  }
+}
+
+/* 矮的螢幕（橫拿的手機）：規則上面的留白縮小 */
+@media (max-height: 480px) {
+  .rules {
+    padding-top: 60px;
+    padding-bottom: 16px;
+  }
+  .rules-title {
+    font-size: 26px;
+  }
+}

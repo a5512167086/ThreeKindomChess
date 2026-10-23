@@ -1,0 +1,613 @@
+/* 對局畫面：宣紙底、墨線棋盤；左上狀態、右上直書棋譜、左下右下密談便箋 */
+
+.game {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--song);
+}
+.game-board {
+  position: absolute;
+  inset: 0;
+}
+
+.game p,
+.game h2,
+.game ul,
+.game ol {
+  margin: 0;
+  padding: 0;
+}
+.game .note {
+  font-size: 12px;
+  color: var(--grey-ink);
+}
+.game .fold-rule {
+  height: 1px;
+  border: 0;
+  margin: 0;
+  background: var(--fold);
+}
+
+/* 各方的小方印：紅、黑、藍 */
+.side-seal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--seal-size, 22px);
+  height: var(--seal-size, 22px);
+  border-radius: 3px;
+  color: var(--ivory);
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: calc(var(--seal-size, 22px) * 0.62);
+  line-height: 1;
+}
+
+/* ---- 左上：選單、狀態 ---- */
+
+.game-status {
+  position: absolute;
+  top: 36px;
+  left: 36px;
+  z-index: 2; /* 選單打開時要蓋過棋盤和棋譜 */
+  width: 230px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* 行高寫死：有些宿名楷體沒有、會換成別的字型，行高跟著變就會讓下面上下跳 */
+  line-height: 1.5;
+  pointer-events: none; /* 讓點擊穿過空白處到棋盤 */
+}
+.game-status > * {
+  pointer-events: auto;
+}
+
+.status-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* 三條槓選單：點開是一張便箋，放回大廳、重新開始這些不常按的 */
+.game-menu {
+  position: relative;
+  flex: none;
+}
+.menu-button {
+  display: flex;
+  padding: 4px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+.menu-button:hover,
+.menu-button[aria-expanded="true"] {
+  color: var(--vermilion);
+}
+.game-menu .game-controls {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 3; /* 下面變淡的時間會自成一層，要壓過它們 */
+  width: 264px;
+  box-sizing: border-box;
+  padding: 16px;
+  background: rgb(244 238 223 / 0.98);
+  border: 1px solid var(--fold);
+  box-shadow: 0 3px 10px rgb(64 46 20 / 0.18);
+}
+
+.turn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  --seal-size: 36px;
+}
+.turn > div {
+  min-width: 0;
+}
+.turn-main {
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 26px;
+  line-height: 1.2;
+}
+.turn-sub {
+  font-size: 14px;
+  color: var(--grey-ink);
+}
+/* 朱雀的第二步：名字旁邊一個朱砂小字 */
+.turn-again {
+  margin-left: 10px;
+  font-size: 15px;
+  color: var(--vermilion);
+}
+
+/* 每行固定高、不折行：有沒有字都佔一樣的位置 */
+.alerts,
+.turn-sub,
+.sky-line,
+.sky-note {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.alerts {
+  height: 1.5em;
+  font-size: 14px;
+}
+.alert-check {
+  color: var(--vermilion);
+  font-weight: 600;
+}
+.alert-quiet {
+  color: var(--grey-ink);
+}
+
+.sky {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sky-line {
+  height: 1.5em;
+  font-size: 14px;
+}
+.sky-line b {
+  font-family: var(--kai);
+  font-size: 16px;
+  margin-right: 8px;
+}
+.sky-note {
+  height: 1.5em;
+}
+
+/* 三家時間一行 */
+.clocks {
+  list-style: none;
+  display: flex;
+  gap: 16px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  --seal-size: 20px;
+}
+.clocks li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  opacity: 0.75;
+}
+.clocks li.active {
+  opacity: 1;
+}
+.clocks li.active .time {
+  color: var(--vermilion);
+}
+.clocks li.out {
+  opacity: 0.35;
+}
+
+/* 各畫面自己放的操作（重新開始、回大廳、電腦下哪幾家…） */
+.game-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 14px;
+}
+.game-controls button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 16px;
+  cursor: pointer;
+}
+.game-controls button:hover:not(:disabled) {
+  color: var(--vermilion);
+}
+.game-controls button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.game-controls .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+}
+.game-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+}
+.game-controls input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--vermilion);
+}
+
+.game button:focus-visible,
+.game input:focus-visible,
+.move-strip li:focus-visible {
+  outline: 2px dashed var(--vermilion);
+  outline-offset: 3px;
+}
+
+/* ---- 右上：直書棋譜，由右往左，最新的在左邊 ---- */
+
+.game-moves {
+  position: absolute;
+  top: 36px;
+  right: 36px;
+  z-index: 1;
+  width: 230px; /* 寬度固定：棋盤照這個寬度讓位，走棋時才不會跳動 */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+/* 標題一行、步數一行，都靠右而且不換行：步數變長只會往左長，標題不會被擠動 */
+.moves-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  white-space: nowrap;
+}
+.moves-head h2 {
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 22px;
+  line-height: 1.2;
+}
+.moves-total {
+  margin-left: 1em;
+}
+.move-strip {
+  list-style: none;
+  display: flex;
+  flex-direction: row-reverse; /* 第一步在最右邊 */
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  border-top: 1px solid var(--fold);
+  border-bottom: 1px solid var(--fold);
+}
+.move-strip li {
+  flex: none;
+  writing-mode: vertical-rl;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 132px; /* 直書時 inline 是上下方向 */
+  padding: 10px 6px;
+  border-left: 1px solid rgb(156 143 114 / 0.45);
+  cursor: pointer;
+}
+.move-strip li:hover {
+  background: rgb(194 59 34 / 0.05);
+}
+.move-strip li.active {
+  background: rgb(194 59 34 / 0.09);
+}
+.move-strip li.empty {
+  cursor: default;
+  color: var(--grey-ink);
+  font-size: 13px;
+}
+/* 步數固定五個字高（最長「九百九十九」），後面的方色和記譜才會每欄對齊 */
+.move-strip .num {
+  inline-size: 5.4em;
+  flex: none;
+  font-family: var(--kai);
+  font-size: 11px;
+  line-height: 1.15;
+  color: var(--grey-ink);
+}
+.move-strip li.empty .num {
+  display: none;
+}
+.move-strip .who {
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 14px;
+}
+.move-strip .text {
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: 0.04em;
+}
+
+.move-nav {
+  align-self: stretch;
+  display: flex;
+  justify-content: center;
+  gap: 22px;
+}
+.move-nav button {
+  display: flex;
+  padding: 2px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+.move-nav button:hover:not(:disabled) {
+  color: var(--vermilion);
+}
+.move-nav button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* 回放提示疊在下面，出現時不要把棋譜區撐高 */
+.review-note {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 100%;
+  text-align: right;
+  pointer-events: none;
+}
+.review-note[hidden] {
+  display: none;
+}
+/* 疊起來的版面裡下面就是棋盤：一直留著它的位置（沒在回放就看不見），才不會蓋到棋子 */
+.is-stacked .review-note {
+  position: static;
+}
+.is-stacked .review-note[hidden] {
+  display: block;
+  visibility: hidden;
+}
+
+/* ---- 左下、右下：密談便箋 ---- */
+
+.chat {
+  position: absolute;
+  bottom: 36px;
+  z-index: 1;
+  width: 280px;
+  box-sizing: border-box;
+  background: rgb(244 238 223 / 0.95);
+  border: 1px solid var(--fold);
+  box-shadow: 0 3px 10px rgb(64 46 20 / 0.18);
+  font-size: 14px;
+}
+.chat-left {
+  left: 36px;
+}
+.chat-right {
+  right: 36px;
+}
+.chat-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 14px 12px 16px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.chat:not(.is-collapsed) .chat-toggle {
+  padding-bottom: 10px;
+}
+.chat-title {
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 17px;
+}
+.chat-state {
+  font-size: 12px;
+  color: var(--grey-ink);
+}
+.chat-state.on {
+  color: var(--green);
+}
+.chat-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1.2px solid var(--grey-ink);
+}
+.chat-dot.on {
+  border-color: var(--green);
+  background: var(--green);
+}
+.chat-badge {
+  padding: 0 6px;
+  border-radius: 3px;
+  background: var(--vermilion);
+  color: var(--ivory);
+  font-size: 12px;
+}
+.chat-chevron {
+  margin-left: auto;
+  flex: none;
+  color: rgb(42 42 42 / 0.7);
+}
+.chat-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 16px;
+  padding: 10px 0 14px;
+  border-top: 1px solid var(--fold);
+}
+/* 固定高度：訊息多了在裡面捲，便箋不會越長越高蓋住棋盤 */
+.chat-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 120px;
+  overflow-y: auto;
+}
+.chat-lines .hint {
+  font-size: 13px;
+  color: var(--grey-ink);
+}
+.chat-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid rgb(42 42 42 / 0.6);
+}
+.chat-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+}
+.chat-input input::placeholder {
+  color: var(--grey-ink);
+}
+.chat-input input:focus-visible {
+  outline: none;
+}
+.chat-input button {
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--vermilion);
+  font-family: var(--kai);
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+.chat-input button:disabled {
+  color: var(--grey-ink);
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* 不夠寬（平板、橫拿的手機）：貼近邊緣，棋譜和密談收窄 */
+@media (max-width: 1180px) {
+  .game-status,
+  .game-moves {
+    top: 12px;
+  }
+  .game-status {
+    left: 12px;
+    width: 210px;
+  }
+  .clocks {
+    gap: 8px;
+    --seal-size: 18px;
+  }
+  .game-moves {
+    right: 12px;
+    width: 150px;
+  }
+  /* 「共幾步」換到第二行：固定兩行，步數變長也只往左長 */
+  .moves-head .note {
+    text-align: right;
+  }
+  .moves-total {
+    display: block;
+    margin-left: 0;
+  }
+  .move-nav {
+    justify-content: space-between;
+    gap: 4px;
+  }
+  .chat {
+    width: 220px;
+    bottom: 12px;
+  }
+  .chat-left {
+    left: 12px;
+  }
+  .chat-right {
+    right: 12px;
+  }
+}
+
+/* 很矮（橫拿的手機），或疊起來但不夠高（小手機）：棋譜每欄不寫步數、欄短一點，
+   橫的下面才放得下密談，直的棋盤才不會被擠小 */
+@media (max-height: 480px) {
+  .move-strip li {
+    min-inline-size: 0;
+    padding: 8px 5px;
+  }
+  .move-strip .num {
+    display: none;
+  }
+}
+@media (max-height: 700px) {
+  .is-stacked .move-strip li {
+    min-inline-size: 0;
+    padding: 8px 5px;
+  }
+  .is-stacked .move-strip .num {
+    display: none;
+  }
+}
+
+/* 直的螢幕（GameView 判斷後加上 is-stacked）：狀態和棋譜在上面、棋盤在中間、兩個密談平分底部 */
+.is-stacked .game-status {
+  width: calc(62vw - 24px);
+  gap: 8px;
+}
+.is-stacked .game-moves {
+  width: min(230px, calc(38vw - 12px));
+}
+.is-stacked .chat {
+  width: calc(50vw - 18px);
+}
+
+/* 手機：字再縮小 */
+@media (max-width: 760px) {
+  .is-stacked .game-status {
+    font-size: 12px;
+  }
+  .is-stacked .status-head {
+    gap: 8px;
+  }
+  .is-stacked .turn {
+    --seal-size: 28px;
+  }
+  .is-stacked .turn-main {
+    font-size: 20px;
+  }
+  .is-stacked .sky-line,
+  .is-stacked .alerts {
+    font-size: 13px;
+  }
+  .is-stacked .clocks {
+    gap: 10px;
+    font-size: 13px;
+  }
+  .is-stacked .game-controls {
+    font-size: 12px;
+  }
+  .is-stacked .game-controls button {
+    font-size: 14px;
+  }
+  .is-stacked .chat-title {
+    font-size: 14px;
+  }
+  .is-stacked .chat-toggle {
+    padding: 10px;
+  }
+}
